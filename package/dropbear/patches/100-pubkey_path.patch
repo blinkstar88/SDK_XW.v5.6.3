@@ -1,0 +1,38 @@
+--- a/svr-authpubkey.c
++++ b/svr-authpubkey.c
+@@ -199,32 +199,29 @@ static int checkpubkey(unsigned char* al
+ 	if (have_algo(algo, algolen, sshhostkey) == DROPBEAR_FAILURE) {
+ 		dropbear_log(LOG_WARNING,
+ 				"Pubkey auth attempt with unknown algo for '%s' from %s",
+ 				ses.authstate.pw_name, svr_ses.addrstring);
+ 		goto out;
+ 	}
+ 
+-	/* check file permissions, also whether file exists */
+-	if (checkpubkeyperms() == DROPBEAR_FAILURE) {
+-		TRACE(("bad authorized_keys permissions, or file doesn't exist"))
+-		goto out;
+-	}
+-
+ 	/* we don't need to check pw and pw_dir for validity, since
+ 	 * its been done in checkpubkeyperms. */
+ 	len = strlen(ses.authstate.pw_dir);
+ 	/* allocate max required pathname storage,
+ 	 * = path + "/.ssh/authorized_keys" + '\0' = pathlen + 22 */
+ 	filename = m_malloc(len + 22);
+ 	snprintf(filename, len + 22, "%s/.ssh/authorized_keys", 
+ 				ses.authstate.pw_dir);
+ 
+ 	/* open the file */
+ 	authfile = fopen(filename, "r");
+ 	if (authfile == NULL) {
++		authfile = fopen("/etc/dropbear/authorized_keys","r");
++	}
++	if (authfile == NULL) {
+ 		goto out;
+ 	}
+ 	TRACE(("checkpubkey: opened authorized_keys OK"))
+ 
+ 	line = buf_new(MAX_AUTHKEYS_LINE);
+ 	line_num = 0;
+ 

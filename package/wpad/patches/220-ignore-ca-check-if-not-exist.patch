@@ -1,0 +1,19 @@
+--- a/src/tls/tlsv1_client_read.c
++++ b/src/tls/tlsv1_client_read.c
+@@ -360,15 +360,15 @@ static int tls_process_certificate(struc
+ 			last->next = cert;
+ 		last = cert;
+ 
+ 		idx++;
+ 		pos += cert_len;
+ 	}
+ 
+-	if (conn->cred &&
++	if (conn->cred && conn->cred->trusted_certs &&
+ 	    x509_certificate_chain_validate(conn->cred->trusted_certs, chain,
+ 					    &reason, conn->disable_time_checks)
+ 	    < 0) {
+ 		int tls_reason;
+ 		wpa_printf(MSG_DEBUG, "TLSv1: Server certificate chain "
+ 			   "validation failed (reason=%d)", reason);
+ 		switch (reason) {

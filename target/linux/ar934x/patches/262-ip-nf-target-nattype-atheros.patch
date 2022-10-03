@@ -1,0 +1,21 @@
+--- a/net/ipv4/netfilter/Kconfig
++++ b/net/ipv4/netfilter/Kconfig
+@@ -177,14 +177,18 @@ config IP_NF_TARGET_MASQUERADE
+ 	  changed to seem to come from a particular interface's address, and
+ 	  if the interface goes down, those connections are lost.  This is
+ 	  only useful for dialup accounts with dynamic IP address (ie. your IP
+ 	  address will be different on next dialup).
+ 
+ 	  To compile it as a module, choose M here.  If unsure, say N.
+ 
++config IP_NF_TARGET_NATTYPE
++        tristate "NATTYPE target support"
++        depends on IP_NF_IPTABLES
++
+ config IP_NF_TARGET_NETMAP
+ 	tristate "NETMAP target support"
+ 	depends on NF_NAT
+ 	depends on NETFILTER_ADVANCED
+ 	help
+ 	  NETMAP is an implementation of static 1:1 NAT mapping of network
+ 	  addresses. It maps the network address part, while keeping the host

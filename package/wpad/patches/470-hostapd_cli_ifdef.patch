@@ -1,0 +1,93 @@
+--- a/hostapd/hostapd_cli.c
++++ b/hostapd/hostapd_cli.c
+@@ -63,28 +63,26 @@ static const char *commands_help =
+ "   all_sta              get MIB variables for all stations\n"
+ "   new_sta <addr>       add a new station\n"
+ "   deauthenticate <addr>  deauthenticate a station\n"
+ "   disassociate <addr>  disassociate a station\n"
+ #ifdef CONFIG_IEEE80211W
+ "   sa_query <addr>      send SA Query to a station\n"
+ #endif /* CONFIG_IEEE80211W */
+-#ifdef CONFIG_WPS
+ "   wps_pin <uuid> <pin> [timeout] [addr]  add WPS Enrollee PIN\n"
+ "   wps_check_pin <PIN>  verify PIN checksum\n"
+ "   wps_pbc              indicate button pushed to initiate PBC\n"
+ "   wps_cancel           cancel the pending WPS operation\n"
+ #ifdef CONFIG_WPS_NFC
+ "   wps_nfc_tag_read <hexdump>  report read NFC tag with WPS data\n"
+ "   wps_nfc_config_token <WPS/NDEF>  build NFC configuration token\n"
+ "   wps_nfc_token <WPS/NDEF/enable/disable>  manager NFC password token\n"
+ #endif /* CONFIG_WPS_NFC */
+ "   wps_ap_pin <cmd> [params..]  enable/disable AP PIN\n"
+ "   wps_config <SSID> <auth> <encr> <key>  configure AP\n"
+ "   wps_get_status       show current WPS status\n"
+-#endif /* CONFIG_WPS */
+ "   get_config           show current configuration\n"
+ "   help                 show this usage help\n"
+ "   interface [ifname]   show interfaces/select interface\n"
+ "   level <debug level>  change debug level\n"
+ "   license              show full hostapd_cli license\n"
+ "   quit                 exit hostapd_cli\n";
+ 
+@@ -358,15 +356,14 @@ static int hostapd_cli_cmd_sa_query(stru
+ 	}
+ 	snprintf(buf, sizeof(buf), "SA_QUERY %s", argv[0]);
+ 	return wpa_ctrl_command(ctrl, buf);
+ }
+ #endif /* CONFIG_IEEE80211W */
+ 
+ 
+-#ifdef CONFIG_WPS
+ static int hostapd_cli_cmd_wps_pin(struct wpa_ctrl *ctrl, int argc,
+ 				   char *argv[])
+ {
+ 	char buf[256];
+ 	if (argc < 2) {
+ 		printf("Invalid 'wps_pin' command - at least two arguments, "
+ 		       "UUID and PIN, are required.\n");
+@@ -584,15 +581,14 @@ static int hostapd_cli_cmd_wps_config(st
+ 		snprintf(buf, sizeof(buf), "WPS_CONFIG %s %s %s",
+ 			 ssid_hex, argv[1], argv[2]);
+ 	else
+ 		snprintf(buf, sizeof(buf), "WPS_CONFIG %s %s",
+ 			 ssid_hex, argv[1]);
+ 	return wpa_ctrl_command(ctrl, buf);
+ }
+-#endif /* CONFIG_WPS */
+ 
+ 
+ static int hostapd_cli_cmd_disassoc_imminent(struct wpa_ctrl *ctrl, int argc,
+ 					     char *argv[])
+ {
+ 	char buf[300];
+ 	int res;
+@@ -909,29 +905,27 @@ static struct hostapd_cli_cmd hostapd_cl
+ 	{ "all_sta", hostapd_cli_cmd_all_sta },
+ 	{ "new_sta", hostapd_cli_cmd_new_sta },
+ 	{ "deauthenticate", hostapd_cli_cmd_deauthenticate },
+ 	{ "disassociate", hostapd_cli_cmd_disassociate },
+ #ifdef CONFIG_IEEE80211W
+ 	{ "sa_query", hostapd_cli_cmd_sa_query },
+ #endif /* CONFIG_IEEE80211W */
+-#ifdef CONFIG_WPS
+ 	{ "wps_pin", hostapd_cli_cmd_wps_pin },
+ 	{ "wps_check_pin", hostapd_cli_cmd_wps_check_pin },
+ 	{ "wps_pbc", hostapd_cli_cmd_wps_pbc },
+ 	{ "wps_cancel", hostapd_cli_cmd_wps_cancel },
+ #ifdef CONFIG_WPS_NFC
+ 	{ "wps_nfc_tag_read", hostapd_cli_cmd_wps_nfc_tag_read },
+ 	{ "wps_nfc_config_token", hostapd_cli_cmd_wps_nfc_config_token },
+ 	{ "wps_nfc_token", hostapd_cli_cmd_wps_nfc_token },
+ 	{ "nfc_get_handover_sel", hostapd_cli_cmd_nfc_get_handover_sel },
+ #endif /* CONFIG_WPS_NFC */
+ 	{ "wps_ap_pin", hostapd_cli_cmd_wps_ap_pin },
+ 	{ "wps_config", hostapd_cli_cmd_wps_config },
+ 	{ "wps_get_status", hostapd_cli_cmd_wps_get_status },
+-#endif /* CONFIG_WPS */
+ 	{ "disassoc_imminent", hostapd_cli_cmd_disassoc_imminent },
+ 	{ "ess_disassoc", hostapd_cli_cmd_ess_disassoc },
+ 	{ "get_config", hostapd_cli_cmd_get_config },
+ 	{ "help", hostapd_cli_cmd_help },
+ 	{ "interface", hostapd_cli_cmd_interface },
+ 	{ "level", hostapd_cli_cmd_level },
+ 	{ "license", hostapd_cli_cmd_license },

@@ -1,0 +1,92 @@
+--- a/drivers/ide/Kconfig
++++ b/drivers/ide/Kconfig
+@@ -1,14 +1,15 @@
+ #
+ # IDE ATA ATAPI Block device driver configuration
+ #
+ 
+ # Select HAVE_IDE if IDE is supported
+ config HAVE_IDE
+ 	bool
++	default n
+ 
+ menuconfig IDE
+ 	tristate "ATA/ATAPI/MFM/RLL support"
+ 	depends on HAVE_IDE
+ 	depends on BLOCK
+ 	---help---
+ 	  If you say Y here, your kernel will be able to manage low cost mass
+--- a/drivers/ssb/Kconfig
++++ b/drivers/ssb/Kconfig
+@@ -1,11 +1,11 @@
+ config SSB_POSSIBLE
+ 	bool
+ 	depends on HAS_IOMEM && HAS_DMA
+-	default y
++	default n
+ 
+ menu "Sonics Silicon Backplane"
+ 	depends on SSB_POSSIBLE
+ 
+ config SSB
+ 	tristate "Sonics Silicon Backplane support"
+ 	depends on SSB_POSSIBLE
+--- a/drivers/usb/Kconfig
++++ b/drivers/usb/Kconfig
+@@ -45,20 +45,23 @@ config USB_ARCH_HAS_OHCI
+ 	# MIPS:
+ 	default y if SOC_AU1X00
+ 	# SH:
+ 	default y if CPU_SUBTYPE_SH7720
+ 	default y if CPU_SUBTYPE_SH7721
+ 	default y if CPU_SUBTYPE_SH7763
+ 	default y if CPU_SUBTYPE_SH7786
++    default y if MACH_AR7100
+ 	# more:
+ 	default PCI
+ 
+ # some non-PCI hcds implement EHCI
+ config USB_ARCH_HAS_EHCI
+ 	boolean
++	default y if MACH_HORNET
++	default y if MACH_AR7100
+ 	default y if PPC_83xx
+ 	default y if SOC_AU1200
+ 	default y if ARCH_IXP4XX
+ 	default y if ARCH_W90X900
+ 	default y if ARCH_AT91SAM9G45
+ 	default PCI
+ 
+--- a/init/Kconfig
++++ b/init/Kconfig
+@@ -15,15 +15,15 @@ config DEFCONFIG_LIST
+ 	default "/boot/config-$UNAME_RELEASE"
+ 	default "$ARCH_DEFCONFIG"
+ 	default "arch/$ARCH/defconfig"
+ 
+ config CONSTRUCTORS
+ 	bool
+ 	depends on !UML
+-	default y
++	default n
+ 
+ menu "General setup"
+ 
+ config EXPERIMENTAL
+ 	bool "Prompt for development and/or incomplete code/drivers"
+ 	---help---
+ 	  Some of the various things that Linux supports (such as network
+--- a/lib/Kconfig.kgdb
++++ b/lib/Kconfig.kgdb
+@@ -1,10 +1,11 @@
+ 
+ config HAVE_ARCH_KGDB
+ 	bool
++	default n
+ 
+ menuconfig KGDB
+ 	bool "KGDB: kernel debugging with remote gdb"
+ 	depends on HAVE_ARCH_KGDB
+ 	depends on DEBUG_KERNEL && EXPERIMENTAL
+ 	help
+ 	  If you say Y here, it will be possible to remotely debug the

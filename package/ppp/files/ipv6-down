@@ -1,0 +1,4 @@
+#!/bin/sh
+for script in /etc/ppp/ipv6-down.d/*; do
+	[ -f $script ] && . $script "$@"
+done

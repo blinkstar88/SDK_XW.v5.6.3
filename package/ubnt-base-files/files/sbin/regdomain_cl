@@ -1,0 +1,41 @@
+#!/bin/sh
+
+. /lib/ubnt/cl_functions.sh
+
+do_regdomain() {	
+	msg=$(regdomain $1 -b $2 -D $3 -a -r -F json)	
+}
+
+CC=$(cl_get_cfg_val "radio.countrycode")
+BW=$(cl_get_board_inc_val "radio1_chanbw")
+DD=$(cl_get_board_inc_val "radio1_devdomain")
+FIXED=$(cl_get_board_inc_val "radio1_ccode_fixed")
+
+rc=0
+
+if [ ".$1" = ".-c" ]; then
+	if [ -z "$2" ]; then
+		rc=101
+		msg="regdomain_cl.sh:Missing country code"
+    elif [ "$2" = "all" ]; then
+		# todo while do_regdomain for all the countries supported
+		rc=102
+		msg=echo "regdomain_cl.sh:Unsupported parameter"
+	else
+		CC="$2"
+	fi
+fi
+
+if [ $FIXED -eq 1 ]; then
+	CC=$DD
+fi
+
+if [ $rc != 0 ]; then
+	cl_format_error "$rc" "$msg"
+else
+	do_regdomain ${CC} ${BW} ${DD}
+	printf '{"rc" : %d, "regdomain" : %s}' "$rc" "$msg"
+fi	
+
+exit 0
+

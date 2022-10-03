@@ -1,0 +1,921 @@
+Source-Makefile: feeds/customfeed/stress/Makefile
+Package: stress
+Version: 1.0.0-1
+Depends: @LINUX_2_6
+Provides: 
+Build-Depends: 
+Section: utils
+Category: Utilities
+Title: stress is a simple stress utility
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	stress is a simple tool that imposes certain types of compute \	stress
+	on UNIX-like operating systems.
+
+http://weather.ou.edu/~apw/projects/stress/
+@@
+
+Source-Makefile: feeds/customfeed/iptables/Makefile
+Package: iptables
+Menu: 1
+Version: 1.4.4-1
+Depends:  +kmod-ipt-core +libiptc +libxtables
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: IPv4 firewall administration tool
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  IPv4 firewall administration tool.
+ Includes support for:
+ - limit
+ - LOG
+ - mac
+ - multiport
+ - REJECT
+ - TCPMSS
+
+http://netfilter.org/
+@@
+Package: iptables-utils
+Version: 1.4.4-1
+Depends: iptables  
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: iptables save and restore utilities
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	iptables save and restore utilities
+
+http://netfilter.org/
+@@
+Package: iptables-mod-conntrack
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-conntrack
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: Basic connection tracking extensions
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  Basic iptables extensions for connection tracking.
+ Includes:
+ - state
+
+http://netfilter.org/
+@@
+Package: iptables-mod-conntrack-extra
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-conntrack-extra
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: Extra connection tracking extensions
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  Extra iptables extensions for connection tracking.
+ Includes:
+ - libipt_conntrack
+ - libipt_helper
+ - libipt_connmark/CONNMARK
+
+http://netfilter.org/
+@@
+Package: iptables-mod-extra
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-extra
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: Other extra iptables extensions
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  other extra iptables extensions.
+ Includes:
+ - libipt_owner
+ - libipt_physdev
+ - libipt_pkttype
+ - libipt_recent
+ - iptable_raw
+ - libipt_NOTRACK
+
+http://netfilter.org/
+@@
+Package: iptables-mod-ipset
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-ipset
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: IPset extension
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	IPset extension
+
+http://netfilter.org/
+@@
+Package: iptables-mod-filter
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-filter
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: Content inspection extensions
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  iptables extensions for packet content inspection.
+ Includes:
+ - libipt_string
+ - libipt_layer7
+
+http://netfilter.org/
+@@
+Package: iptables-mod-imq
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-imq
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: IMQ support
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  iptables extension for IMQ support.
+ Includes:
+ - libipt_IMQ
+
+http://netfilter.org/
+@@
+Package: iptables-mod-ipopt
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-ipopt
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: IP/Packet option extensions
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  iptables extensions for matching/changing IP packet options.
+ Includes:
+ - libipt_CLASSIFY
+ - libipt_dscp/DSCP
+ - libipt_ecn/ECN
+ - libipt_length
+ - libipt_mac
+ - libipt_mark/MARK
+ - libipt_statistic
+ - libipt_tcpmms
+ - libipt_tos/TOS
+ - libipt_ttl/TTL
+ - libipt_unclean
+
+http://netfilter.org/
+@@
+Package: iptables-mod-ipsec
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-ipsec
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: IPsec extensions
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  iptables extensions for matching ipsec traffic.
+ Includes:
+ - libipt_ah
+ - libipt_esp
+ - libipt_policy
+
+http://netfilter.org/
+@@
+Package: iptables-mod-nat
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-nat
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: Basic NAT extensions
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  iptables extensions for basic NAT targets.
+ Includes:
+ - MASQUERADE
+ - SNAT
+ - DNAT
+
+http://netfilter.org/
+@@
+Package: iptables-mod-nat-extra
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-nat-extra
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: Extra NAT extensions
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  iptables extensions for extra NAT targets.
+ Includes:
+ - REDIRECT
+
+http://netfilter.org/
+@@
+Package: iptables-mod-iprange
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-iprange
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: IP range extension
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  iptables extensions for matching ip ranges.
+ Includes:
+ - libipt_iprange
+
+http://netfilter.org/
+@@
+Package: iptables-mod-ulog
+Version: 1.4.4-1
+Depends: iptables  +kmod-ipt-ulog
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: Base system
+Title: user-space packet logging
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  iptables extensions for user-space packet logging.
+ Includes:
+ - libipt_ULOG
+
+http://netfilter.org/
+@@
+Package: ip6tables
+Menu: 1
+Version: 1.4.4-1
+Depends: +kmod-ip6tables
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: IPv6
+Title: IPv6 firewall administration tool
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	IPv6 firewall administration tool
+
+http://netfilter.org/
+@@
+Package: ip6tables-utils
+Version: 1.4.4-1
+Depends: ip6tables
+Provides: 
+Build-Depends: libtool libtool
+Section: net
+Category: IPv6
+Title: ip6tables save and restore utilities
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	ip6tables save and restore utilities
+
+http://netfilter.org/
+@@
+Package: libiptc
+Version: 1.4.4-1
+Depends: 
+Provides: 
+Build-Depends: libtool libtool
+Section: libs
+Category: Libraries
+Title: IPv4/IPv6 firewall - shared libiptc library
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	IPv4/IPv6 firewall - shared libiptc library
+
+http://netfilter.org/
+@@
+Package: libxtables
+Version: 1.4.4-1
+Depends: 
+Provides: 
+Build-Depends: libtool libtool
+Section: libs
+Category: Libraries
+Title: IPv4/IPv6 firewall - shared xtables library
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	IPv4/IPv6 firewall - shared xtables library
+
+http://netfilter.org/
+@@
+
+Source-Makefile: feeds/customfeed/6tunnel/Makefile
+Package: 6tunnel
+Version: 0.11rc2-3
+Depends: +libpcap +kmod-sit
+Provides: 
+Build-Depends: 
+Section: net
+Category: Network
+Title: IPv4 / IPv6 tunnel proxy
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: IPv4 / IPv6 tunnel proxy
+
+http://toxygen.net/6tunnel/
+@@
+
+Source-Makefile: feeds/customfeed/miniupnpd/Makefile
+Package: miniupnpd
+Version: 1.4-1
+Depends: +iptables
+Provides: 
+Build-Depends: 
+Section: net
+Category: Network
+Title: Lightweight UPnP daemon
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	Lightweight UPnP daemon
+
+http://miniupnp.free.fr/
+@@
+
+Source-Makefile: feeds/customfeed/wide-dhcpv6/Makefile
+Package: wide-dhcpv6-client
+Submenu: wide-dhcpv6
+Version: 20080615-4
+Depends: +kmod-ipv6 
+Provides: 
+Build-Depends: 
+Section: ipv6
+Category: IPv6
+Title: WIDE-DHCPv6 client
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	WIDE-DHCPv6 is an open-source implementation of Dynamic Host Configuration Protocol
+	for IPv6 (DHCPv6) originally developed by the KAME project. The implementation
+	mainly conforms to the following standards: RFC3315,3319,3633,3646,4075,4272,etc.
+
+	This package installs the client component.
+
+https://sourceforge.net/projects/wide-dhcpv6/
+@@
+Package: wide-dhcpv6-server
+Submenu: wide-dhcpv6
+Version: 20080615-4
+Depends: +kmod-ipv6 
+Provides: 
+Build-Depends: 
+Section: ipv6
+Category: IPv6
+Title: WIDE-DHCPv6 server
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	WIDE-DHCPv6 is an open-source implementation of Dynamic Host Configuration Protocol
+	for IPv6 (DHCPv6) originally developed by the KAME project. The implementation
+	mainly conforms to the following standards: RFC3315,3319,3633,3646,4075,4272,etc.
+
+	This package installs the server component.
+
+https://sourceforge.net/projects/wide-dhcpv6/
+@@
+Package: wide-dhcpv6-relay
+Submenu: wide-dhcpv6
+Version: 20080615-4
+Depends: +kmod-ipv6 
+Provides: 
+Build-Depends: 
+Section: ipv6
+Category: IPv6
+Title: WIDE-DHCPv6 relay
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	WIDE-DHCPv6 is an open-source implementation of Dynamic Host Configuration Protocol
+	for IPv6 (DHCPv6) originally developed by the KAME project. The implementation
+	mainly conforms to the following standards: RFC3315,3319,3633,3646,4075,4272,etc.
+
+	This package installs the relay component.
+
+https://sourceforge.net/projects/wide-dhcpv6/
+@@
+Package: wide-dhcpv6-control
+Submenu: wide-dhcpv6
+Version: 20080615-4
+Depends: +kmod-ipv6 
+Provides: 
+Build-Depends: 
+Section: ipv6
+Category: IPv6
+Title: WIDE-DHCPv6 client and server control utility
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	WIDE-DHCPv6 is an open-source implementation of Dynamic Host Configuration Protocol
+	for IPv6 (DHCPv6) originally developed by the KAME project. The implementation
+	mainly conforms to the following standards: RFC3315,3319,3633,3646,4075,4272,etc.
+
+	This package installs the client and server control utility.
+
+https://sourceforge.net/projects/wide-dhcpv6/
+@@
+
+Source-Makefile: feeds/customfeed/madwifi/Makefile
+Package: kmod-madwifi
+Menu: 1
+Submenu: Wireless Drivers
+Version: <LINUX_VERSION>+r3314--4
+Depends: +wireless-tools @PCI_SUPPORT @(!(TARGET_avr32||TARGET_cobalt||TARGET_ep93xx||TARGET_etrax||TARGET_octeon||TARGET_pxcab||TARGET_sibyte)||BROKEN)
+Provides: 
+Build-Depends: wprobe
+Section: kernel
+Category: Kernel modules
+Title: Driver for Atheros wireless chipsets
+Maintainer: Felix Fietkau <nbd@openwrt.org>
+Type: ipkg
+Description:  This package contains a driver for Atheros 802.11a/b/g chipsets.
+
+http://madwifi-project.org/
+@@
+Config: 
+	source "/opt/project/packages/madwifi/Config.in"
+@@
+
+Source-Makefile: feeds/customfeed/tcl/Makefile
+Package: tcl
+Version: 8.4.19-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: lang
+Category: Languages
+Title: TCL Lang
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	TCL Scripting Language
+
+http://www.tcl.tk
+@@
+
+Source-Makefile: feeds/customfeed/iperf/Makefile
+Package: iperf
+Version: 2.0.5-1
+Depends: +uclibcxx
+Provides: 
+Build-Depends: 
+Section: net
+Category: Network
+Title: Internet Protocol bandwidth measuring tool (with single thread support)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  Iperf is a modern alternative for measuring TCP and UDP bandwidth
+ performance, allowing the tuning of various parameters and
+ characteristics.
+ This package is built with single thread support.
+
+http://sourceforge.net/projects/iperf/
+@@
+Package: iperf-mt
+Version: 2.0.5-1
+Depends: +uclibcxx +libpthread
+Provides: 
+Build-Depends: 
+Section: net
+Category: Network
+Title: Internet Protocol bandwidth measuring tool (with multithread support)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  Iperf is a modern alternative for measuring TCP and UDP bandwidth
+ performance, allowing the tuning of various parameters and
+ characteristics.
+ This package is built with multithread support.
+
+http://sourceforge.net/projects/iperf/
+@@
+
+Source-Makefile: feeds/customfeed/openssl/Makefile
+Package: libopenssl
+Menu: 1
+Submenu: SSL
+Version: 1.0.2h-1
+Depends: +OPENSSL_WITH_COMPRESSION:zlib
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: Open source SSL toolkit (libraries)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: The OpenSSL Project is a collaborative effort to develop a robust,
+commercial-grade, full-featured, and Open Source toolkit implementing the Secure
+Sockets Layer (SSL v2/v3) and Transport Layer Security (TLS v1) protocols as well
+as a full-strength general purpose cryptography library.
+This package contains the OpenSSL shared libraries, needed by other programs.
+
+http://www.openssl.org/
+@@
+Config: 
+source "/opt/project/packages/openssl/Config.in"
+@@
+Package: openssl-util
+Version: 1.0.2h-1
+Depends: +libopenssl
+Provides: 
+Build-Depends: 
+Section: utils
+Category: Utilities
+Title: Open source SSL toolkit (utility)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: The OpenSSL Project is a collaborative effort to develop a robust,
+commercial-grade, full-featured, and Open Source toolkit implementing the Secure
+Sockets Layer (SSL v2/v3) and Transport Layer Security (TLS v1) protocols as well
+as a full-strength general purpose cryptography library.
+This package contains the OpenSSL command-line utility.
+
+http://www.openssl.org/
+@@
+
+Source-Makefile: feeds/customfeed/tcpdump/Makefile
+Package: tcpdump
+Version: 3.9.8-1
+Depends: +libpcap
+Provides: 
+Build-Depends: 
+Section: net
+Category: Network
+Title: Network monitoring and data acquisition tool
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	Network monitoring and data acquisition tool
+
+http://www.tcpdump.org/
+@@
+
+Source-Makefile: feeds/customfeed/libusb/Makefile
+Package: libusb
+Version: 0.1.12-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: A library for accessing Linux USB devices
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	A library for accessing Linux USB devices
+
+http://libusb.sourceforge.net/
+@@
+
+Source-Makefile: feeds/customfeed/memtester/Makefile
+Package: memtester
+Version: 4.1.3-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: utils
+Category: Utilities
+Title: Userspace utility for testing the memory subsystem for faults
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  A userspace utility for testing the memory subsystem for faults.
+
+http://pyropus.ca/software/memtester/
+@@
+
+Source-Makefile: feeds/customfeed/uclibc++/Makefile
+Package: uclibcxx
+Version: 0.2.2-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: C++ library for embedded systems
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	C++ library for embedded systems
+
+http://cxx.uclibc.org/src/
+@@
+
+Source-Makefile: feeds/customfeed/lua/Makefile
+Package: liblua
+Version: 5.1.4-8
+Depends: 
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: Lua programming language (libraries)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  Lua is a powerful light-weight programming language designed for extending 
+ applications. Lua is also frequently used as a general-purpose, stand-alone 
+ language. Lua is free software.
+ This package contains the Lua shared libraries, needed by other programs.
+
+http://www.lua.org/
+@@
+Package: lua
+Submenu: Lua
+Version: 5.1.4-8
+Depends: +liblua
+Provides: 
+Build-Depends: 
+Section: lang
+Category: Languages
+Title: Lua programming language (interpreter)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  Lua is a powerful light-weight programming language designed for extending 
+ applications. Lua is also frequently used as a general-purpose, stand-alone 
+ language. Lua is free software.
+ This package contains the Lua language interpreter.
+
+http://www.lua.org/
+@@
+Package: luac
+Submenu: Lua
+Version: 5.1.4-8
+Depends: +liblua
+Provides: 
+Build-Depends: 
+Section: lang
+Category: Languages
+Title: Lua programming language (compiler)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  Lua is a powerful light-weight programming language designed for extending 
+ applications. Lua is also frequently used as a general-purpose, stand-alone 
+ language. Lua is free software.
+ This package contains the Lua language compiler.
+
+http://www.lua.org/
+@@
+Package: lua-examples
+Submenu: Lua
+Version: 5.1.4-8
+Depends: lua
+Provides: 
+Build-Depends: 
+Section: lang
+Category: Languages
+Title: Lua programming language (examples)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:  Lua is a powerful light-weight programming language designed for extending 
+ applications. Lua is also frequently used as a general-purpose, stand-alone 
+ language. Lua is free software.
+ This package contains Lua language examples.
+
+http://www.lua.org/
+@@
+
+Source-Makefile: feeds/customfeed/protobuf-c/Makefile
+Package: libprotobuf-c
+Version: 0.15-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: Protocol Buffers library
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:   Runtime library to use Google Protocol Buffers from C applications.
+  Protocol Buffers are a way of encoding structured data in an efficient yet
+  extensible format. Google uses Protocol Buffers for almost all of its
+  internal RPC protocols and file formats.
+
+http://code.google.com/p/protobuf-c/
+@@
+
+Source-Makefile: feeds/customfeed/ntpclient/Makefile
+Package: ntpclient
+Submenu: Time Synchronization
+Version: 2007_365-4
+Depends: +librt
+Provides: 
+Build-Depends: 
+Section: net
+Category: Network
+Title: NTP (Network Time Protocol) client
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	NTP client for setting system time from NTP servers.
+
+http://doolittle.icarus.com/ntpclient/
+@@
+
+Source-Makefile: feeds/customfeed/libtool/Makefile
+Package: libltdl
+Version: 1.5.24-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: A generic dynamic object loading library
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	A generic dynamic object loading library
+
+http://www.gnu.org/software/libtool/
+@@
+
+Source-Makefile: feeds/customfeed/usb-modeswitch/Makefile
+Package: usb-modeswitch
+Version: 1.2.5+20121109-1
+Depends: +libusb-compat
+Provides: 
+Build-Depends: 
+Section: utils
+Category: Utilities
+Title: USB ModeSwitch
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description:   A mode switching tool for controlling
+  "flip flop" (multiple device) USB gear.
+
+http://www.draisberghof.de/usb_modeswitch/
+@@
+
+Source-Makefile: feeds/customfeed/libevent2/Makefile
+Package: libevent2
+Version: 2.0.22-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: Event notification library (version 2.0)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 		The libevent API provides a mechanism to execute a callback function
+	when a specific event occurs on a file descriptor or after a timeout
+	has been reached. Furthermore, libevent also support callbacks due
+	to signals or regular timeouts.
+
+	libevent is meant to replace the event loop found in event driven
+	network servers. An application just needs to call event_dispatch()
+	and then add or remove events dynamically without having to change
+	the event loop.
+
+	This package contains the libevent shared library historically
+	containing both the core & extra libraries.
+
+http://www.monkey.org/~provos/libevent/
+@@
+Package: libevent2-core
+Version: 2.0.22-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: Event notification core library (version 2.0)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 		The libevent API provides a mechanism to execute a callback function
+	when a specific event occurs on a file descriptor or after a timeout
+	has been reached. Furthermore, libevent also support callbacks due
+	to signals or regular timeouts.
+
+	libevent is meant to replace the event loop found in event driven
+	network servers. An application just needs to call event_dispatch()
+	and then add or remove events dynamically without having to change
+	the event loop.
+
+	This package contains the libevent core shared library for the event,
+	buffer & utility functions.
+
+http://www.monkey.org/~provos/libevent/
+@@
+Package: libevent2-extra
+Version: 2.0.22-1
+Depends: 
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: Event notification extra library (version 2.0)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 		The libevent API provides a mechanism to execute a callback function
+	when a specific event occurs on a file descriptor or after a timeout
+	has been reached. Furthermore, libevent also support callbacks due
+	to signals or regular timeouts.
+
+	libevent is meant to replace the event loop found in event driven
+	network servers. An application just needs to call event_dispatch()
+	and then add or remove events dynamically without having to change
+	the event loop.
+
+	This package contains the libevent extra shared library for specific
+	protocols including HTTP, DNS & RPC.
+
+http://www.monkey.org/~provos/libevent/
+@@
+Package: libevent2-openssl
+Version: 2.0.22-1
+Depends:  +libopenssl
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: Event notification OpenSSL library (version 2.0)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 		The libevent API provides a mechanism to execute a callback function
+	when a specific event occurs on a file descriptor or after a timeout
+	has been reached. Furthermore, libevent also support callbacks due
+	to signals or regular timeouts.
+
+	libevent is meant to replace the event loop found in event driven
+	network servers. An application just needs to call event_dispatch()
+	and then add or remove events dynamically without having to change
+	the event loop.
+
+	This package contains the libevent OpenSSL shared library for encrypted
+	bufferevents.
+
+http://www.monkey.org/~provos/libevent/
+@@
+Package: libevent2-pthreads
+Version: 2.0.22-1
+Depends:  +libpthread
+Provides: 
+Build-Depends: 
+Section: libs
+Category: Libraries
+Title: Event notification Pthreads library (version 2.0)
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 		The libevent API provides a mechanism to execute a callback function
+	when a specific event occurs on a file descriptor or after a timeout
+	has been reached. Furthermore, libevent also support callbacks due
+	to signals or regular timeouts.
+
+	libevent is meant to replace the event loop found in event driven
+	network servers. An application just needs to call event_dispatch()
+	and then add or remove events dynamically without having to change
+	the event loop.
+
+	This package contains the libevent Pthreads shared library for
+	threading & locking.
+
+http://www.monkey.org/~provos/libevent/
+@@
+
+Source-Makefile: feeds/customfeed/ebtables/Makefile
+Package: ebtables
+Submenu: Firewall
+Version: 2.0.10-4-1
+Depends: +kmod-ebtables
+Provides: 
+Build-Depends: 
+Section: net
+Category: Network
+Title: Ethernet bridge firewall administration utility
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 	The ebtables program is a filtering tool for a bridging firewall. The
+	filtering is focussed on the Link Layer Ethernet frame fields. Apart
+	from filtering, it also gives the ability to alter the Ethernet MAC
+	addresses and implement a brouter.
+
+http://ebtables.sourceforge.net/
+@@
+Package: ebtables-utils
+Submenu: Firewall
+Version: 2.0.10-4-1
+Depends: +kmod-ebtables ebtables
+Provides: 
+Build-Depends: 
+Section: net
+Category: Network
+Title: ebtables save/restore utilities
+Maintainer: OpenWrt Developers Team <openwrt-devel@openwrt.org>
+Type: ipkg
+Description: 		The ebtables program is a filtering tool for a bridging firewall. The
+	filtering is focussed on the Link Layer Ethernet frame fields. Apart
+	from filtering, it also gives the ability to alter the Ethernet MAC
+	addresses and implement a brouter.
+
+http://ebtables.sourceforge.net/
+@@
+

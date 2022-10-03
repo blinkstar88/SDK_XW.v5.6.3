@@ -1,0 +1,34 @@
+--- a/src/dnsmasq.c
++++ b/src/dnsmasq.c
+@@ -287,26 +287,28 @@ int main (int argc, char **argv)
+       (daemon->lease_change_command || daemon->luascript))
+     {
+       if ((ent_pw = getpwnam(daemon->scriptuser)))
+ 	{
+ 	  script_uid = ent_pw->pw_uid;
+ 	  script_gid = ent_pw->pw_gid;
+ 	 }
+-      else
+-	baduser = daemon->scriptuser;
++//	else
++//	baduser = daemon->scriptuser;
+     }
+ #endif
+-  
++
++#if 0  
+   if (daemon->username && !(ent_pw = getpwnam(daemon->username)))
+     baduser = daemon->username;
+   else if (daemon->groupname && !(gp = getgrnam(daemon->groupname)))
+     baduser = daemon->groupname;
+ 
+   if (baduser)
+     die(_("unknown user or group: %s"), baduser, EC_BADCONF);
++#endif
+    
+   /* implement group defaults, "dip" if available, or group associated with uid */
+   if (!daemon->group_set && !gp)
+     {
+       if (!(gp = getgrnam(CHGRP)) && ent_pw)
+ 	gp = getgrgid(ent_pw->pw_gid);
+       

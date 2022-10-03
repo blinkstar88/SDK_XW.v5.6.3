@@ -1,0 +1,19 @@
+--- a/drivers/usb/gadget/u_ether.c
++++ b/drivers/usb/gadget/u_ether.c
+@@ -803,15 +803,15 @@ int __init gether_setup(struct usb_gadge
+ 	 *  - iff DATA transfer is active, carrier is "on"
+ 	 *  - tx queueing enabled if open *and* carrier is "on"
+ 	 */
+ 	netif_stop_queue(net);
+ 	netif_carrier_off(net);
+ 
+ 	dev->gadget = g;
+-	SET_NETDEV_DEV(net, &g->dev);
++//	SET_NETDEV_DEV(net, &g->dev);
+ 
+ 	status = register_netdev(net);
+ 	if (status < 0) {
+ 		dev_dbg(&g->dev, "register_netdev failed, %d\n", status);
+ 		free_netdev(net);
+ 	} else {
+ 		INFO(dev, "MAC %pM\n", net->dev_addr);

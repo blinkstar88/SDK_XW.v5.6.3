@@ -1,0 +1,99 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title><? echo get_title($cfg, dict_translate("Custom Scripts Management")); ></title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Pragma" content="no-cache">
+<link rel="shortcut icon" href="FULL_VERSION_LINK/favicon.ico" >
+<link href="FULL_VERSION_LINK/style.css" rel="stylesheet" type="text/css">
+<link href="FULL_VERSION_LINK/help.css" rel="stylesheet" type="text/css">
+<script type="text/javascript" language="javascript" src="jsl10n.cgi?l=<? echo $ui_language; >&v=FULL_VERSION_LINK"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.utils.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.ui.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/help.js"></script>
+<script type="text/javascript" language="javascript" src="FULL_VERSION_LINK/util.js"></script>
+<script type="text/javascript" language="javascript" src="FULL_VERSION_LINK/sorttable.js"></script>
+<script type="text/javascript" language="javascript">
+//<!--
+
+function compare(a,b) {
+  if (a.filename < b.filename)
+     return -1;
+  if (a.filename > b.filename)
+    return 1;
+  return 0;
+}
+
+function push_list(jsonstr) {
+	var fileobj = eval('(' + jsonstr + ')');
+	fileobj = fileobj.sort(compare);
+	var tbody = [];
+	
+	for (var i = 0; i < fileobj.length; i++) {
+		var row = [];
+		row.push("<tr>");
+		row.push("<td class=\"left\"><input id=" + fileobj[i].filename + " class=\"st\" type=\"checkbox\"" + (fileobj[i].status == "enabled" ? "checked" : "") + "></td>");
+		row.push("<td>&nbsp;" + fileobj[i].filename + "</td>");
+		row.push("<td class=\"centered\"><input id=" + fileobj[i].filename + " class=\"maint_btn\" type=\"button\" onClick=\"location.href='scr.cgi?fname=" + "rc." + fileobj[i].filename + "&status=" + (fileobj[i].status == "disabled" ? "_disabled" : "") + "';\" value=\"<? echo dict_translate("Download..."); >\" ></td>");
+<!--		row.push("<td class=\"centered\"><input id=" + fileobj[i].filename + " class=\"maint_btn\" type=\"button\" onClick=\"location.href='scr.cgi?fname=" + fileobj[i].filename + "';\" value=\"<? echo dict_translate("Download..."); >\" ></td>");-->
+		row.push("<td class=\"centered\"><input id=" + fileobj[i].filename + " class=\"rm\" type=\"button\" value=\"<? echo dict_translate("Remove"); >\"></td>");
+		row.push("</tr>");
+		tbody.push(row.join(''));
+	}
+	$('#t_cust_scripts > tbody').append(tbody.join(''));
+
+	return 0;
+}
+
+$(function() {
+	var close_window = '<? echo $close_window; >';
+	if (close_window == '1')
+		window.close();
+
+	$('.st').change(function() {
+		$(this).data('orig', $(this).is(':checked'));
+		var scr_name = $(this).attr('id');
+		var scr_enabled = $(this).is(':checked');
+		$('#scripts_form').append('<input type="hidden" name="scr_name" value="' + scr_name + '"/>');
+		$('#scripts_form').append('<input type="hidden" name="scr_enabled" value="' + scr_enabled + '"/>');
+		$('#scripts_form').submit();
+	});
+
+	$('.rm').click(function() {
+		var rm_scr = $(this).attr('id');
+		$('#scripts_form').append('<input type="hidden" name="rm_scr" value="' + rm_scr + '"/>');
+		$('#scripts_form').submit();
+	});
+
+	var scripts_modified = '<? echo $scripts_modified; >';
+	$('#btn_save').click(function() {
+		if (scripts_modified == '1') var value="save";
+		else var value="no_changes";
+		$('#scripts_form').append('<input type="hidden" name="action" value="' + value + '"/>');
+		$('#scripts_form').submit();
+	});
+
+	$('#scripts_form').submit(function() {
+		return true;
+	});
+});
+// -->
+</script>
+</head>
+
+<body class="popup">
+<br>
+<form id="scripts_form" action="<? echo $PHP_SELF; >" method="POST" enctype="multipart/form-data">
+<table cellspacing="0" cellpadding="0" align="center" class="popup">
+<tr><th colspan="4"> <? echo dict_translate("Custom Scripts Management"); ></th></tr>
+<tr><td colspan="4"> <? include("lib/error.tmpl"); ></td></tr>
+<tr><td colspan="4" class="sep">&nbsp;</td></tr>
+<tr><td colspan="4">
+<table cellspacing="0" cellpadding="0" class="listhead" id="t_cust_scripts">
+  <tr> 
+    <th style="text-align: left;"><? echo dict_translate("Enabled"); ></th>
+    <th style="text-align: left;"><? echo dict_translate("Script Name"); ></th>
+    <th style="text-align: center;"><? echo dict_translate("Download Script"); ></th>
+    <th style="text-align: center;"><? echo dict_translate("Remove Script"); ></th>
+  </tr>

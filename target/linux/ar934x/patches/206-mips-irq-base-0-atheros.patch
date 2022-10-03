@@ -1,0 +1,20 @@
+--- a/arch/mips/kernel/irq_cpu.c
++++ b/arch/mips/kernel/irq_cpu.c
+@@ -95,15 +95,16 @@ static struct irq_chip mips_mt_cpu_irq_c
+ 	.mask_ack	= mips_mt_cpu_irq_ack,
+ 	.unmask		= unmask_mips_mt_irq,
+ 	.eoi		= unmask_mips_mt_irq,
+ };
+ 
+ void __init mips_cpu_irq_init(void)
+ {
+-	int irq_base = MIPS_CPU_IRQ_BASE;
++	//int irq_base = MIPS_CPU_IRQ_BASE;
++	int irq_base = 0;
+ 	int i;
+ 
+ 	/* Mask interrupts. */
+ 	clear_c0_status(ST0_IM);
+ 	clear_c0_cause(CAUSEF_IP);
+ 
+ 	/*

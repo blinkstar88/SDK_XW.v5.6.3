@@ -1,0 +1,169 @@
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -519,16 +519,34 @@ static inline unsigned char *skb_end_poi
+ #else
+ static inline unsigned char *skb_end_pointer(const struct sk_buff *skb)
+ {
+ 	return skb->end;
+ }
+ #endif
+ 
++#if defined(CONFIG_WLAN_4K_SKB_OPT) && !defined(CONFIG_PRIV_SKB_MEM)
++#define skb_could_do_4k_opt(size) \
++	((size) > 4096 -sizeof(struct skb_shared_info) && (size) < 4096 - sizeof(void*))
++
++static inline struct skb_shared_info * skb_shinfo(const struct sk_buff *skb)
++{
++	struct skb_shared_info *shinfo;
++	unsigned int size;
++	size = skb_end_pointer(skb) - skb->head;
++
++	if (skb_could_do_4k_opt(size))
++		shinfo = *(struct skb_shared_info **)(skb_end_pointer(skb));
++	else
++		shinfo = (struct skb_shared_info *)(skb_end_pointer(skb));
++	return shinfo;
++}
++#else
+ /* Internal */
+ #define skb_shinfo(SKB)	((struct skb_shared_info *)(skb_end_pointer(SKB)))
++#endif
+ 
+ static inline struct skb_shared_hwtstamps *skb_hwtstamps(struct sk_buff *skb)
+ {
+ 	return &skb_shinfo(skb)->hwtstamps;
+ }
+ 
+ static inline union skb_shared_tx *skb_tx(struct sk_buff *skb)
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -302,14 +302,42 @@ void priv_skbmem_free(u8 *skbmem, int si
+     if(size <= PRIV_BUFSIZE_2K)
+         priv_skb_free_2k(skbmem);
+     else
+         priv_skb_free_4k(skbmem);
+ }
+ #endif
+ 
++
++#ifdef CONFIG_WLAN_4K_SKB_OPT
++inline u8* skb_4k_opt_malloc(unsigned int size, gfp_t gfp_mask, int node)
++{
++	struct skb_shared_info *shinfo;
++	u8 *data;
++	shinfo = kmalloc(sizeof(struct skb_shared_info), gfp_mask & ~__GFP_DMA);
++	if (!shinfo)
++		return NULL;
++	data = kmalloc_node_track_caller(size + sizeof(void*), gfp_mask, node);
++	if (!data)
++	{
++		kfree(shinfo);
++		return NULL;
++	}
++	*(struct skb_shared_info **)(data + size) = shinfo;
++
++	return data;
++
++}
++
++inline void skb_4k_opt_free(struct sk_buff *skb)
++{
++	kfree(skb_shinfo(skb));
++	kfree(skb->head);
++}
++#endif
++
+ /**
+  *	__alloc_skb	-	allocate a network buffer
+  *	@size: size to allocate
+  *	@gfp_mask: allocation mask
+  *	@fclone: allocate from fclone cache instead of head cache
+  *		and allocate a cloned (child) skb
+  *	@node: numa node to allocate memory on
+@@ -340,14 +368,22 @@ struct sk_buff *__alloc_skb(unsigned int
+ #ifdef CONFIG_PRIV_SKB_MEM
+     if (unlikely((size > PRIV_BUFSIZE_4K) || ((data = priv_skbmem_get(size +
+             sizeof(struct skb_shared_info))) == NULL))) {
+ 	    data = kmalloc_node_track_caller(size + sizeof(struct skb_shared_info),
+ 			    gfp_mask, node);
+     }
+ #else
++#ifdef CONFIG_WLAN_4K_SKB_OPT
++	if (skb_could_do_4k_opt(size))
++	{
++		data = skb_4k_opt_malloc(size, gfp_mask, node);
++	}
++	else
++#endif
++
+ 	data = kmalloc_node_track_caller(size + sizeof(struct skb_shared_info),
+ 			gfp_mask, node);
+ #endif
+ 	if (!data)
+ 		goto nodata;
+ 
+ 	/*
+@@ -518,14 +554,21 @@ static void skb_release_data(struct sk_b
+         if (likely((skb->head - priv_skb_mem) < sizeof(priv_skb_mem))) {
+             size = skb->end - skb->head + sizeof(struct skb_shared_info);
+             priv_skbmem_free(skb->head, size);
+         } else {
+ 		kfree(skb->head);
+ 	}
+ #else
++#ifdef CONFIG_WLAN_4K_SKB_OPT
++	if (skb_could_do_4k_opt(skb_end_pointer(skb) - skb->head))
++	{
++		skb_4k_opt_free(skb);
++	}
++	else
++#endif
+ 		kfree(skb->head);
+ #endif
+ 	}
+ }
+ 
+ /*
+  *	Free an skbuff by memory without cleaning the state.
+@@ -988,26 +1031,41 @@ int pskb_expand_head(struct sk_buff *skb
+ 
+ #ifdef CONFIG_PRIV_SKB_MEM
+     if (unlikely((size > PRIV_BUFSIZE_4K) || ((data = priv_skbmem_get(size +
+             sizeof(struct skb_shared_info))) == NULL))) {
+ 	data = kmalloc(size + sizeof(struct skb_shared_info), gfp_mask);
+     }
+ #else
++#ifdef CONFIG_WLAN_4K_SKB_OPT
++	if (skb_could_do_4k_opt(size))
++	{
++		data = skb_4k_opt_malloc(size, gfp_mask, -1);
++	}
++	else
++#endif
+ 	data = kmalloc(size + sizeof(struct skb_shared_info), gfp_mask);
+ #endif
+ 	if (!data)
+ 		goto nodata;
+ 
+ 	/* Copy only real data... and, alas, header. This should be
+ 	 * optimized for the cases when header is void. */
+ #ifdef NET_SKBUFF_DATA_USES_OFFSET
+ 	memcpy(data + nhead, skb->head, skb->tail);
+ #else
+ 	memcpy(data + nhead, skb->head, skb->tail - skb->head);
+ #endif
++#if defined(CONFIG_WLAN_4K_SKB_OPT) && !defined(CONFIG_PRIV_SKB_MEM)
++	if (skb_could_do_4k_opt(size))
++	{
++		memcpy(*(struct skb_shared_info **)(data + size), skb_shinfo(skb),
++		       sizeof(struct skb_shared_info));
++	}
++	else
++#endif
+ 	memcpy(data + size, skb_end_pointer(skb),
+ 	       sizeof(struct skb_shared_info));
+ 
+ 	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++)
+ 		get_page(skb_shinfo(skb)->frags[i].page);
+ 
+ 	if (skb_has_frags(skb))

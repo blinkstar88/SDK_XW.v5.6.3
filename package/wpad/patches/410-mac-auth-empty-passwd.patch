@@ -1,0 +1,77 @@
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -1694,14 +1694,16 @@ static int hostapd_config_fill(struct ho
+ 			if (hostapd_config_read_macformat(pos, &bss->macaddr_format))
+ 			{
+ 				wpa_printf(MSG_ERROR, "Line %d: Failed to "
+ 					   "read macaddr_format '%s'",
+ 					   line, pos);
+ 				errors++;
+ 			}
++		} else if (os_strcmp(buf, "mac_acl_empty_passwd")== 0) {
++			bss->mac_acl_empty_passwd = atoi(pos);
+ 		} else if (os_strcmp(buf, "accept_mac_file") == 0) {
+ 			if (hostapd_config_read_maclist(pos, &bss->accept_mac,
+ 							&bss->num_accept_mac))
+ 			{
+ 				wpa_printf(MSG_ERROR, "Line %d: Failed to "
+ 					   "read accept_mac_file '%s'",
+ 					   line, pos);
+--- a/src/ap/ap_config.c
++++ b/src/ap/ap_config.c
+@@ -77,14 +77,15 @@ void hostapd_config_defaults_bss(struct
+ #ifdef EAP_SERVER_FAST
+ 	 /* both anonymous and authenticated provisioning */
+ 	bss->eap_fast_prov = 3;
+ 	bss->pac_key_lifetime = 7 * 24 * 60 * 60;
+ 	bss->pac_key_refresh_time = 1 * 24 * 60 * 60;
+ #endif /* EAP_SERVER_FAST */
+         bss->macaddr_format = os_strdup(RADIUS_ADDR_FORMAT);
++        bss->mac_acl_empty_passwd = 0;
+ 	/* Set to -1 as defaults depends on HT in setup */
+ 	bss->wmm_enabled = -1;
+ 
+ #ifdef CONFIG_IEEE80211R
+ 	bss->ft_over_ds = 1;
+ #endif /* CONFIG_IEEE80211R */
+ 
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -236,14 +236,15 @@ struct hostapd_bss_config {
+ 
+ 	enum {
+ 		ACCEPT_UNLESS_DENIED = 0,
+ 		DENY_UNLESS_ACCEPTED = 1,
+ 		USE_EXTERNAL_RADIUS_AUTH = 2
+         } macaddr_acl;
+         char *macaddr_format; /* format patern for MAC address, kind of %2X:%2X:%2X:%2X:%2X:%2X or %2x%2x%2x%2x%2x%2x */
++        int mac_acl_empty_passwd; /* no password for MAC authentication */
+ 	struct mac_acl_entry *accept_mac;
+ 	int num_accept_mac;
+ 	struct mac_acl_entry *deny_mac;
+ 	int num_deny_mac;
+ 	int wds_sta;
+ 	int isolate;
+ 	int start_disabled;
+--- a/src/ap/ieee802_11_auth.c
++++ b/src/ap/ieee802_11_auth.c
+@@ -170,16 +170,18 @@ static int hostapd_radius_acl_query(stru
+ 	os_snprintf(buf, sizeof(buf), RADIUS_ADDR_FORMAT, MAC2STR(addr));
+ 	if (!radius_msg_add_attr(msg, RADIUS_ATTR_USER_NAME, (u8 *) buf,
+ 				 os_strlen(buf))) {
+ 		wpa_printf(MSG_DEBUG, "Could not add User-Name");
+ 		goto fail;
+ 	}
+ 
++        if (hapd->conf->mac_acl_empty_passwd)
++                os_memset(buf, 0, 16);
+ 	if (!radius_msg_add_attr_user_password(
+-		    msg, (u8 *) buf, os_strlen(buf),
++		    msg, (u8 *) buf, hapd->conf->mac_acl_empty_passwd ? 16 : os_strlen(buf),
+ 		    hapd->conf->radius->auth_server->shared_secret,
+ 		    hapd->conf->radius->auth_server->shared_secret_len)) {
+ 		wpa_printf(MSG_DEBUG, "Could not add User-Password");
+ 		goto fail;
+ 	}
+ 
+ 	if (add_common_radius_attr(hapd, hapd->conf->radius_auth_req_attr,

@@ -1,0 +1,74 @@
+Index: binutils-2.17/gas/doc/c-arc.texi
+===================================================================
+--- binutils-2.17.orig/gas/doc/c-arc.texi
++++ binutils-2.17/gas/doc/c-arc.texi
+@@ -212,7 +212,7 @@ The extension instructions are not macro
+ encodings for use of these instructions according to the specification
+ by the user.  The parameters are:
+ 
+-@table @bullet
++@table @code
+ @item @var{name}
+ Name of the extension instruction 
+ 
+Index: binutils-2.17/gas/doc/c-mips.texi
+===================================================================
+--- binutils-2.17.orig/gas/doc/c-mips.texi
++++ binutils-2.17/gas/doc/c-mips.texi
+@@ -160,7 +160,7 @@ the @samp{mad} and @samp{madu} instructi
+ instructions around accesses to the @samp{HI} and @samp{LO} registers.
+ @samp{-no-m4650} turns off this option.
+ 
+-@itemx -m3900
++@item -m3900
+ @itemx -no-m3900
+ @itemx -m4100
+ @itemx -no-m4100
+Index: binutils-2.17/gas/doc/c-tic54x.texi
+===================================================================
+--- binutils-2.17.orig/gas/doc/c-tic54x.texi
++++ binutils-2.17/gas/doc/c-tic54x.texi
+@@ -108,7 +108,7 @@ In this example, x is replaced with SYM2
+ is replaced with x.  At this point, x has already been encountered
+ and the substitution stops.
+ 
+-@smallexample @code
++@smallexample
+  .asg   "x",SYM1 
+  .asg   "SYM1",SYM2
+  .asg   "SYM2",x
+@@ -125,14 +125,14 @@ Substitution may be forced in situations
+ ambiguous by placing colons on either side of the subsym.  The following
+ code: 
+ 
+-@smallexample @code
++@smallexample
+  .eval  "10",x
+ LAB:X:  add     #x, a
+ @end smallexample
+ 
+ When assembled becomes:
+ 
+-@smallexample @code
++@smallexample
+ LAB10  add     #10, a
+ @end smallexample
+ 
+@@ -308,7 +308,7 @@ The @code{LDX} pseudo-op is provided for
+ of a label or address.  For example, if an address @code{_label} resides
+ in extended program memory, the value of @code{_label} may be loaded as
+ follows:
+-@smallexample @code
++@smallexample
+  ldx     #_label,16,a    ; loads extended bits of _label
+  or      #_label,a       ; loads lower 16 bits of _label
+  bacc    a               ; full address is in accumulator A
+@@ -344,7 +344,7 @@ Assign @var{name} the string @var{string
+ performed on @var{string} before assignment.
+ 
+ @cindex @code{eval} directive, TIC54X
+-@itemx .eval @var{string}, @var{name}
++@item .eval @var{string}, @var{name}
+ Evaluate the contents of string @var{string} and assign the result as a
+ string to the subsym @var{name}.  String replacement is performed on
+ @var{string} before assignment. 

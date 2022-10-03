@@ -1,0 +1,42 @@
+--- a/iwlist.c
++++ b/iwlist.c
+@@ -643,15 +643,18 @@ print_scanning_info(int		skfd,
+   /* Check if the interface could support scanning. */
+   if((!has_range) || (range.we_version_compiled < 14))
+     {
+       fprintf(stderr, "%-8.16s  Interface doesn't support scanning.\n\n",
+ 	      ifname);
+       return(-1);
+     }
+-
++  else {
++      /* Get channels count from range to count scan timeout */
++      timeout = (range.num_channels + 1) * 300000; /* 300ms per channel */
++  }
+   /* Init timeout value -> 250ms between set and first get */
+   tv.tv_sec = 0;
+   tv.tv_usec = 250000;
+ 
+   /* Clean up set args */
+   memset(&scanopt, 0, sizeof(scanopt));
+ 
+@@ -827,17 +830,17 @@ print_scanning_info(int		skfd,
+ 		  /* Try again */
+ 		  goto realloc;
+ 		}
+ 
+ 	      /* Check if results not available yet */
+ 	      if(errno == EAGAIN)
+ 		{
+-		  /* Restart timer for only 100ms*/
++		  /* Restart timer for only 300ms. 2 beacons at least*/
+ 		  tv.tv_sec = 0;
+-		  tv.tv_usec = 100000;
++		  tv.tv_usec = 300000;
+ 		  timeout -= tv.tv_usec;
+ 		  if(timeout > 0)
+ 		    continue;	/* Try again later */
+ 		}
+ 
+ 	      /* Bad error */
+ 	      free(buffer);

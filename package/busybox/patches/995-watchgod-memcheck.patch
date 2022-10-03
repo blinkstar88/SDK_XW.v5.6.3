@@ -1,0 +1,62 @@
+--- a/miscutils/watchdog.c
++++ b/miscutils/watchdog.c
+@@ -9,30 +9,41 @@
+  */
+ 
+ #include "libbb.h"
+ 
+ #define OPT_FOREGROUND 0x01
+ #define OPT_TIMER      0x02
+ 
++static unsigned int low_mem = 500; //kB
++
+ static void watchdog_shutdown(int sig ATTRIBUTE_UNUSED)
+ {
+ 	static const char V = 'V';
+ 
+ 	write(3, &V, 1);	/* Magic, see watchdog-api.txt in kernel */
+ 	if (ENABLE_FEATURE_CLEAN_UP)
+ 		close(3);
+ 	exit(EXIT_SUCCESS);
+ }
+ 
++static unsigned int watchdog_get_mem(void)
++{
++    struct sysinfo info;
++    if (sysinfo(&info))
++	return low_mem;
++    return info.freeram / 1024;
++}
++
+ int watchdog_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
+ int watchdog_main(int argc, char **argv)
+ {
+ 	unsigned opts;
+ 	unsigned timer_duration = 30000; /* Userspace timer duration, in milliseconds */
+ 	char *t_arg;
++	char oom = 0;
+ 
+ 	opt_complementary = "=1"; /* must have 1 argument */
+ 	opts = getopt32(argv, "Ft:", &t_arg);
+ 
+ 	if (opts & OPT_TIMER) {
+ 		static const struct suffix_mult suffixes[] = {
+ 			{ "ms", 1 },
+@@ -62,10 +73,17 @@ int watchdog_main(int argc, char **argv)
+ 	while (1) {
+ 		/*
+ 		 * Make sure we clear the counter before sleeping, as the counter value
+ 		 * is undefined at this point -- PFM
+ 		 */
+ 		write(3, "", 1); /* write zero byte */
+ 		usleep(timer_duration * 1000L);
++		if (watchdog_get_mem() < low_mem) {
++			if (oom) //Two times in a row
++				break; //RAM to low lets HW watchdog kill the system
++			oom = 1;
++		} else {
++			oom = 0;
++		}
+ 	}
+ 	return EXIT_SUCCESS; /* - not reached, but gcc 4.2.1 is too dumb! */
+ }

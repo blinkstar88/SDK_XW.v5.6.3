@@ -1,0 +1,253 @@
+--- a/ipc/shm.c
++++ b/ipc/shm.c
+@@ -407,16 +407,18 @@ static int newseg(struct ipc_namespace *
+ 
+ 	ns->shm_tot += numpages;
+ 	error = shp->shm_perm.id;
+ 	shm_unlock(shp);
+ 	return error;
+ 
+ no_id:
++#ifdef CONFIG_HAVE_MLOCK
+ 	if (is_file_hugepages(file) && shp->mlock_user)
+ 		user_shm_unlock(size, shp->mlock_user);
++#endif
+ 	fput(file);
+ no_file:
+ 	security_shm_free(shp);
+ 	ipc_rcu_putref(shp);
+ 	return error;
+ }
+ 
+--- a/mm/fremap.c
++++ b/mm/fremap.c
+@@ -213,32 +213,36 @@ SYSCALL_DEFINE5(remap_file_pages, unsign
+ 		vma->vm_flags |= VM_NONLINEAR;
+ 		vma_prio_tree_remove(vma, &mapping->i_mmap);
+ 		vma_nonlinear_insert(vma, &mapping->i_mmap_nonlinear);
+ 		flush_dcache_mmap_unlock(mapping);
+ 		spin_unlock(&mapping->i_mmap_lock);
+ 	}
+ 
++#ifdef CONFIG_HAVE_MLOCK
+ 	if (vma->vm_flags & VM_LOCKED) {
+ 		/*
+ 		 * drop PG_Mlocked flag for over-mapped range
+ 		 */
+ 		unsigned int saved_flags = vma->vm_flags;
+ 		munlock_vma_pages_range(vma, start, start + size);
+ 		vma->vm_flags = saved_flags;
+ 	}
++#endif
+ 
+ 	mmu_notifier_invalidate_range_start(mm, start, start + size);
+ 	err = populate_range(mm, vma, start, size, pgoff);
+ 	mmu_notifier_invalidate_range_end(mm, start, start + size);
+ 	if (!err && !(flags & MAP_NONBLOCK)) {
+ 		if (vma->vm_flags & VM_LOCKED) {
++#ifdef CONFIG_HAVE_MLOCK
+ 			/*
+ 			 * might be mapping previously unmapped range of file
+ 			 */
+ 			mlock_vma_pages_range(vma, start, start + size);
++#endif
+ 		} else {
+ 			if (unlikely(has_write_lock)) {
+ 				downgrade_write(&mm->mmap_sem);
+ 				has_write_lock = 0;
+ 			}
+ 			make_pages_present(start, start+size);
+ 		}
+--- a/mm/mmap.c
++++ b/mm/mmap.c
+@@ -965,16 +965,18 @@ unsigned long do_mmap_pgoff(struct file
+ 	/* Do simple checking here so the lower-level routines won't have
+ 	 * to. we assume access permissions have been handled by the open
+ 	 * of the memory object, so we don't do any here.
+ 	 */
+ 	vm_flags = calc_vm_prot_bits(prot) | calc_vm_flag_bits(flags) |
+ 			mm->def_flags | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC;
+ 
++#ifdef CONFIG_HAVE_MLOCK
+ 	if (flags & MAP_LOCKED)
+ 		if (!can_do_mlock())
++#endif
+ 			return -EPERM;
+ 
+ 	/* mlock MCL_FUTURE? */
+ 	if (vm_flags & VM_LOCKED) {
+ 		unsigned long locked, lock_limit;
+ 		locked = len >> PAGE_SHIFT;
+ 		locked += mm->locked_vm;
+@@ -1223,21 +1225,23 @@ munmap_back:
+ 		atomic_inc(&inode->i_writecount);
+ out:
+ 	perf_event_mmap(vma);
+ 
+ 	mm->total_vm += len >> PAGE_SHIFT;
+ 	vm_stat_account(mm, vm_flags, file, len >> PAGE_SHIFT);
+ 	if (vm_flags & VM_LOCKED) {
++#ifdef CONFIG_HAVE_MLOCK
+ 		/*
+ 		 * makes pages present; downgrades, drops, reacquires mmap_sem
+ 		 */
+ 		long nr_pages = mlock_vma_pages_range(vma, addr, addr + len);
+ 		if (nr_pages < 0)
+ 			return nr_pages;	/* vma gone! */
+ 		mm->locked_vm += (len >> PAGE_SHIFT) - nr_pages;
++#endif
+ 	} else if ((flags & MAP_POPULATE) && !(flags & MAP_NONBLOCK))
+ 		make_pages_present(addr, addr + len);
+ 	return addr;
+ 
+ unmap_and_free_vma:
+ 	if (correct_wcount)
+ 		atomic_inc(&inode->i_writecount);
+@@ -1715,16 +1719,18 @@ find_extend_vma(struct mm_struct *mm, un
+ 	addr &= PAGE_MASK;
+ 	vma = find_vma_prev(mm, addr, &prev);
+ 	if (vma && (vma->vm_start <= addr))
+ 		return vma;
+ 	if (!prev || expand_stack(prev, addr))
+ 		return NULL;
+ 	if (prev->vm_flags & VM_LOCKED) {
++#ifdef CONFIG_HAVE_MLOCK
+ 		if (mlock_vma_pages_range(prev, addr, prev->vm_end) < 0)
+ 			return NULL;	/* vma gone! */
++#endif
+ 	}
+ 	return prev;
+ }
+ #else
+ int expand_stack(struct vm_area_struct *vma, unsigned long address)
+ {
+ 	return expand_downwards(vma, address);
+@@ -1743,18 +1749,20 @@ find_extend_vma(struct mm_struct * mm, u
+ 	if (vma->vm_start <= addr)
+ 		return vma;
+ 	if (!(vma->vm_flags & VM_GROWSDOWN))
+ 		return NULL;
+ 	start = vma->vm_start;
+ 	if (expand_stack(vma, addr))
+ 		return NULL;
++#ifdef CONFIG_HAVE_MLOCK
+ 	if (vma->vm_flags & VM_LOCKED) {
+ 		if (mlock_vma_pages_range(vma, addr, start) < 0)
+ 			return NULL;	/* vma gone! */
+ 	}
++#endif
+ 	return vma;
+ }
+ #endif
+ 
+ /*
+  * Ok - we have the memory areas we should free on the vma list,
+  * so release them, and do the vma updates.
+@@ -1938,18 +1946,20 @@ int do_munmap(struct mm_struct *mm, unsi
+ 
+ 	/*
+ 	 * unlock any mlock()ed ranges before detaching vmas
+ 	 */
+ 	if (mm->locked_vm) {
+ 		struct vm_area_struct *tmp = vma;
+ 		while (tmp && tmp->vm_start < end) {
++#ifdef CONFIG_HAVE_MLOCK
+ 			if (tmp->vm_flags & VM_LOCKED) {
+ 				mm->locked_vm -= vma_pages(tmp);
+ 				munlock_vma_pages_all(tmp);
+ 			}
++#endif
+ 			tmp = tmp->vm_next;
+ 		}
+ 	}
+ 
+ 	/*
+ 	 * Remove the vma's, and unmap the actual pages
+ 	 */
+@@ -2075,18 +2085,20 @@ unsigned long do_brk(unsigned long addr,
+ 	vma->vm_end = addr + len;
+ 	vma->vm_pgoff = pgoff;
+ 	vma->vm_flags = flags;
+ 	vma->vm_page_prot = vm_get_page_prot(flags);
+ 	vma_link(mm, vma, prev, rb_link, rb_parent);
+ out:
+ 	mm->total_vm += len >> PAGE_SHIFT;
++#ifdef CONFIG_HAVE_MLOCK
+ 	if (flags & VM_LOCKED) {
+ 		if (!mlock_vma_pages_range(vma, addr, addr + len))
+ 			mm->locked_vm += (len >> PAGE_SHIFT);
+ 	}
++#endif
+ 	return addr;
+ }
+ 
+ EXPORT_SYMBOL(do_brk);
+ 
+ /* Release all mmaps. */
+ void exit_mmap(struct mm_struct *mm)
+@@ -2098,16 +2110,18 @@ void exit_mmap(struct mm_struct *mm)
+ 
+ 	/* mm's last user has gone, and its about to be pulled down */
+ 	mmu_notifier_release(mm);
+ 
+ 	if (mm->locked_vm) {
+ 		vma = mm->mmap;
+ 		while (vma) {
++#ifdef CONFIG_HAVE_MLOCK
+ 			if (vma->vm_flags & VM_LOCKED)
+ 				munlock_vma_pages_all(vma);
++#endif
+ 			vma = vma->vm_next;
+ 		}
+ 	}
+ 
+ 	arch_exit_mmap(mm);
+ 
+ 	vma = mm->mmap;
+--- a/mm/mremap.c
++++ b/mm/mremap.c
+@@ -245,20 +245,22 @@ static unsigned long move_vma(struct vm_
+ 	/* Restore VM_ACCOUNT if one or two pieces of vma left */
+ 	if (excess) {
+ 		vma->vm_flags |= VM_ACCOUNT;
+ 		if (split)
+ 			vma->vm_next->vm_flags |= VM_ACCOUNT;
+ 	}
+ 
++#ifdef CONFIG_HAVE_MLOCK
+ 	if (vm_flags & VM_LOCKED) {
+ 		mm->locked_vm += new_len >> PAGE_SHIFT;
+ 		if (new_len > old_len)
+ 			mlock_vma_pages_range(new_vma, new_addr + old_len,
+ 						       new_addr + new_len);
+ 	}
++#endif
+ 
+ 	return new_addr;
+ }
+ 
+ static struct vm_area_struct *vma_to_resize(unsigned long addr,
+ 	unsigned long old_len, unsigned long new_len, unsigned long *p)
+ {
+@@ -466,19 +468,21 @@ unsigned long do_mremap(unsigned long ad
+ 			int pages = (new_len - old_len) >> PAGE_SHIFT;
+ 
+ 			vma_adjust(vma, vma->vm_start,
+ 				addr + new_len, vma->vm_pgoff, NULL);
+ 
+ 			mm->total_vm += pages;
+ 			vm_stat_account(mm, vma->vm_flags, vma->vm_file, pages);
++#ifdef CONFIG_HAVE_MLOCK
+ 			if (vma->vm_flags & VM_LOCKED) {
+ 				mm->locked_vm += pages;
+ 				mlock_vma_pages_range(vma, addr + old_len,
+ 						   addr + new_len);
+ 			}
++#endif
+ 			ret = addr;
+ 			goto out;
+ 		}
+ 	}
+ 
+ 	/*
+ 	 * We weren't able to just expand or shrink the area,

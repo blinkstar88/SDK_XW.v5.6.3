@@ -1,0 +1,40 @@
+--- a/drivers/pci/Kconfig
++++ b/drivers/pci/Kconfig
+@@ -65,14 +65,22 @@ config PCI_STUB
+ 
+ config PCI_DISABLE_COMMON_QUIRKS
+ 	bool "PCI disable common quirks"
+ 	depends on PCI
+ 	help
+ 	  If you don't know what to do here, say N.
+ 
++config PCI_EP
++	tristate "PCI Endpoint driver for Atheros"
++	depends on PCI
++	help
++	  Say Y or M here if you want be able to use Atheros PCI device
++
++	  When in doubt, say N.
++
+ config HT_IRQ
+ 	bool "Interrupts on hypertransport devices"
+ 	default y
+ 	depends on PCI && X86_LOCAL_APIC && X86_IO_APIC
+ 	help
+ 	   This allows native hypertransport devices to use interrupts.
+ 
+--- a/drivers/pci/Makefile
++++ b/drivers/pci/Makefile
+@@ -56,10 +56,12 @@ obj-$(CONFIG_ACPI)    += pci-acpi.o
+ # Cardbus & CompactPCI use setup-bus
+ obj-$(CONFIG_HOTPLUG) += setup-bus.o
+ 
+ obj-$(CONFIG_PCI_SYSCALL) += syscall.o
+ 
+ obj-$(CONFIG_PCI_STUB) += pci-stub.o
+ 
++obj-$(CONFIG_PCI_EP) += ath_pci_tgt.o
++
+ ifeq ($(CONFIG_PCI_DEBUG),y)
+ EXTRA_CFLAGS += -DDEBUG
+ endif

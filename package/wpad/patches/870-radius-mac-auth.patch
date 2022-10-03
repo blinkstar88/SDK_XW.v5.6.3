@@ -1,0 +1,513 @@
+--- a/src/ap/ap_config.c
++++ b/src/ap/ap_config.c
+@@ -88,14 +88,16 @@ void hostapd_config_defaults_bss(struct
+ #ifdef CONFIG_IEEE80211R
+ 	bss->ft_over_ds = 1;
+ #endif /* CONFIG_IEEE80211R */
+ 
+ 	bss->radius_das_time_window = 300;
+ 
+ 	bss->sae_anti_clogging_threshold = 5;
++
++	bss->radius_mac_acl = 0;
+ }
+ 
+ 
+ struct hostapd_config * hostapd_config_defaults(void)
+ {
+ #define ecw2cw(ecw) ((1 << (ecw)) - 1)
+ 
+@@ -873,14 +875,20 @@ void hostapd_set_security_params(struct
+ 		int cipher = WPA_CIPHER_WEP40;
+ 		if (bss->ssid.wep.len[0] >= 13)
+ 			cipher = WPA_CIPHER_WEP104;
+ 		bss->ssid.security_policy = SECURITY_STATIC_WEP;
+ 		bss->wpa_group = cipher;
+ 		bss->wpa_pairwise = cipher;
+ 		bss->rsn_pairwise = cipher;
++	} else if (bss->macaddr_acl == USE_EXTERNAL_RADIUS_AUTH) {
++		bss->ssid.security_policy = WPA_CIPHER_NONE;
++		bss->wpa_group = WPA_CIPHER_NONE;
++		bss->wpa_pairwise = WPA_CIPHER_NONE;
++		bss->rsn_pairwise = WPA_CIPHER_NONE;
++		bss->radius_mac_acl = 1;
+ 	} else {
+ 		bss->ssid.security_policy = SECURITY_PLAINTEXT;
+ 		bss->wpa_group = WPA_CIPHER_NONE;
+ 		bss->wpa_pairwise = WPA_CIPHER_NONE;
+ 		bss->rsn_pairwise = WPA_CIPHER_NONE;
+ 	}
+ }
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -237,14 +237,15 @@ struct hostapd_bss_config {
+ 	enum {
+ 		ACCEPT_UNLESS_DENIED = 0,
+ 		DENY_UNLESS_ACCEPTED = 1,
+ 		USE_EXTERNAL_RADIUS_AUTH = 2
+         } macaddr_acl;
+         char *macaddr_format; /* format patern for MAC address, kind of %2X:%2X:%2X:%2X:%2X:%2X or %2x%2x%2x%2x%2x%2x */
+         int mac_acl_empty_passwd; /* no password for MAC authentication */
++        int radius_mac_acl; /* radius mac acl */
+ 	struct mac_acl_entry *accept_mac;
+ 	int num_accept_mac;
+ 	struct mac_acl_entry *deny_mac;
+ 	int num_deny_mac;
+ 	int wds_sta;
+ 	int isolate;
+ 	int start_disabled;
+--- a/src/ap/ap_drv_ops.c
++++ b/src/ap/ap_drv_ops.c
+@@ -458,14 +458,20 @@ int hostapd_get_seqnum(const char *ifnam
+ int hostapd_flush(struct hostapd_data *hapd)
+ {
+ 	if (hapd->driver == NULL || hapd->driver->flush == NULL)
+ 		return 0;
+ 	return hapd->driver->flush(hapd->drv_priv);
+ }
+ 
++int hostapd_set_radius_mac_acl(struct hostapd_data *hapd)
++{
++	if (hapd->driver == NULL || hapd->driver->radius_mac_acl== NULL)
++		return 0;
++	return hapd->driver->radius_mac_acl(hapd->drv_priv);
++}
+ 
+ int hostapd_set_freq_params(struct hostapd_freq_params *data, int mode,
+ 			    int freq, int channel, int ht_enabled,
+ 			    int vht_enabled, int sec_channel_offset,
+ 			    int vht_oper_chwidth, int center_segment0,
+ 			    int center_segment1, u32 vht_caps)
+ {
+@@ -695,14 +701,21 @@ int hostapd_drv_sta_deauth(struct hostap
+ {
+ 	if (hapd->driver == NULL || hapd->driver->sta_deauth == NULL)
+ 		return 0;
+ 	return hapd->driver->sta_deauth(hapd->drv_priv, hapd->own_addr, addr,
+ 					reason);
+ }
+ 
++int hostapd_is_radius_mac_acl(void *ctx)
++{
++	struct hostapd_data *hapd = ctx;
++	if (hapd != NULL && hapd->conf != NULL)
++		return hapd->conf->radius_mac_acl;
++	return 0;
++}
+ 
+ int hostapd_drv_sta_disassoc(struct hostapd_data *hapd,
+ 			     const u8 *addr, int reason)
+ {
+ 	if (hapd->driver == NULL || hapd->driver->sta_disassoc == NULL)
+ 		return 0;
+ 	return hapd->driver->sta_disassoc(hapd->drv_priv, hapd->own_addr, addr,
+--- a/src/ap/ap_drv_ops.h
++++ b/src/ap/ap_drv_ops.h
+@@ -107,14 +107,15 @@ int hostapd_start_dfs_cac(struct hostapd
+ 			  int sec_channel_offset, int vht_oper_chwidth,
+ 			  int center_segment0, int center_segment1);
+ int hostapd_set_freq_params(struct hostapd_freq_params *data, int mode,
+ 			    int freq, int channel, int ht_enabled,
+ 			    int vht_enabled, int sec_channel_offset,
+ 			    int vht_oper_chwidth, int center_segment0,
+ 			    int center_segment1, u32 vht_caps);
++int hostapd_is_radius_mac_acl(void *ctx);
+ 
+ 
+ #include "drivers/driver.h"
+ 
+ int hostapd_drv_wnm_oper(struct hostapd_data *hapd,
+ 			 enum wnm_oper oper, const u8 *peer,
+ 			 u8 *buf, u16 *buf_len);
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -824,14 +824,20 @@ static int hostapd_setup_bss(struct host
+ 
+ 	if (hapd->wpa_auth && wpa_init_keys(hapd->wpa_auth) < 0)
+ 		return -1;
+ 
+ 	if (hapd->driver && hapd->driver->set_operstate)
+ 		hapd->driver->set_operstate(hapd->drv_priv, 1);
+ 
++	if (conf->radius_mac_acl) {
++		if (hostapd_set_radius_mac_acl(hapd)) {
++			wpa_printf(MSG_INFO, "Radius MAC ACL initialization failed.");
++		}
++	}
++
+ 	return 0;
+ }
+ 
+ 
+ static void hostapd_tx_queue_params(struct hostapd_iface *iface)
+ {
+ 	struct hostapd_data *hapd = iface->bss[0];
+@@ -1973,18 +1979,18 @@ void hostapd_new_assoc_sta(struct hostap
+ 		sta->no_p2p_set = 1;
+ 		hapd->num_sta_no_p2p++;
+ 		if (hapd->num_sta_no_p2p == 1)
+ 			hostapd_p2p_non_p2p_sta_connected(hapd);
+ 	}
+ #endif /* CONFIG_P2P */
+ 
+-	/* Start accounting here, if IEEE 802.1X and WPA are not used.
++	/* Start accounting here, if IEEE 802.1X, WPA and mac acl are not used.
+ 	 * IEEE 802.1X/WPA code will start accounting after the station has
+ 	 * been authorized. */
+-	if (!hapd->conf->ieee802_1x && !hapd->conf->wpa) {
++	if (!hapd->conf->ieee802_1x && !hapd->conf->wpa && !hapd->conf->radius_mac_acl) {
+ 		os_get_reltime(&sta->connected_time);
+ 		accounting_sta_start(hapd, sta);
+ 	}
+ 
+ 	/* Start IEEE 802.1X authentication process for new stations */
+ 	ieee802_1x_new_station(hapd, sta);
+ 	if (reassoc) {
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -685,14 +685,23 @@ static void handle_auth(struct hostapd_d
+ 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+ 			       HOSTAPD_LEVEL_DEBUG,
+ 			       "authentication OK (open system)");
+ 		sta->flags |= WLAN_STA_AUTH;
+ 		wpa_auth_sm_event(sta->wpa_sm, WPA_AUTH);
+ 		sta->auth_alg = WLAN_AUTH_OPEN;
+ 		mlme_authenticate_indication(hapd, sta);
++		if (hapd->conf->radius_mac_acl) {
++			if (!hapd->conf->ieee802_1x && !hapd->conf->wpa) {
++				os_get_reltime(&sta->connected_time);
++				accounting_sta_start(hapd, sta);
++			}
++			if (hostapd_set_authorized(hapd, sta, 1)) {
++				wpa_printf(MSG_INFO, "Failed to authorize ["MACSTR"]", MAC2STR(sta->addr));
++			}
++		}
+ 		break;
+ 	case WLAN_AUTH_SHARED_KEY:
+ 		resp = auth_shared_key(hapd, sta, auth_transaction, challenge,
+ 				       fc & WLAN_FC_ISWEP);
+ 		sta->auth_alg = WLAN_AUTH_SHARED_KEY;
+ 		mlme_authenticate_indication(hapd, sta);
+ 		if (sta->challenge && auth_transaction == 1) {
+--- a/src/ap/ieee802_11_auth.c
++++ b/src/ap/ieee802_11_auth.c
+@@ -20,14 +20,15 @@
+ #include "radius/radius_client.h"
+ #include "hostapd.h"
+ #include "ap_config.h"
+ #include "ap_drv_ops.h"
+ #include "ieee802_11.h"
+ #include "ieee802_1x.h"
+ #include "ieee802_11_auth.h"
++#include "common/ieee802_11_defs.h"
+ 
+ #define RADIUS_ACL_TIMEOUT 30
+ 
+ 
+ struct hostapd_cached_radius_acl {
+ 	struct os_reltime timestamp;
+ 	macaddr addr;
+@@ -163,15 +164,15 @@ static int hostapd_radius_acl_query(stru
+ 	query->radius_id = radius_client_get_id(hapd->radius);
+ 	msg = radius_msg_new(RADIUS_CODE_ACCESS_REQUEST, query->radius_id);
+ 	if (msg == NULL)
+ 		return -1;
+ 
+ 	radius_msg_make_authenticator(msg, addr, ETH_ALEN);
+ 
+-	os_snprintf(buf, sizeof(buf), RADIUS_ADDR_FORMAT, MAC2STR(addr));
++        os_snprintf(buf, sizeof(buf), hapd->conf->macaddr_format, MAC2STR(addr));
+ 	if (!radius_msg_add_attr(msg, RADIUS_ATTR_USER_NAME, (u8 *) buf,
+ 				 os_strlen(buf))) {
+ 		wpa_printf(MSG_DEBUG, "Could not add User-Name");
+ 		goto fail;
+ 	}
+ 
+         if (hapd->conf->mac_acl_empty_passwd)
+@@ -376,24 +377,27 @@ static void hostapd_acl_expire_queries(s
+ 
+ 	prev = NULL;
+ 	entry = hapd->acl_queries;
+ 
+ 	while (entry) {
+ 		if (os_reltime_expired(now, &entry->timestamp,
+ 				       RADIUS_ACL_TIMEOUT)) {
+-			wpa_printf(MSG_DEBUG, "ACL query for " MACSTR
+-				   " has expired.", MAC2STR(entry->addr));
++			uint8_t addr[6] = {0xFF};
++			if (hapd && hapd->conf && hapd->conf->radius_mac_acl)
++				memcpy(addr, entry->addr, ETH_ALEN);
+ 			if (prev)
+ 				prev->next = entry->next;
+ 			else
+ 				hapd->acl_queries = entry->next;
+ 
+ 			tmp = entry;
+ 			entry = entry->next;
+ 			hostapd_acl_query_free(tmp);
++			if (addr[0] != 0xFF)
++				hostapd_drv_sta_deauth(hapd, addr, WLAN_REASON_DEAUTH_LEAVING);
+ 			continue;
+ 		}
+ 
+ 		prev = entry;
+ 		entry = entry->next;
+ 	}
+ }
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -1919,14 +1919,21 @@ struct wpa_driver_ops {
+ 	 * @priv: Private driver interface data
+ 	 * @addr: MAC address of the station to be removed
+ 	 * Returns: 0 on success, -1 on failure
+ 	 */
+ 	int (*sta_remove)(void *priv, const u8 *addr);
+ 
+ 	/**
++	 * radius_mac_acl - Set radius mac acl mode (AP only)
++	 * @priv: Private driver interface data
++	 * Returns: 0 on success, -1 on failure
++	 */
++	int (*radius_mac_acl)(void *priv);
++
++	/**
+ 	 * hapd_get_ssid - Get the current SSID (AP only)
+ 	 * @priv: Private driver interface data
+ 	 * @buf: Buffer for returning the SSID
+ 	 * @len: Maximum length of the buffer
+ 	 * Returns: Length of the SSID on success, -1 on failure
+ 	 *
+ 	 * This function need not be implemented if the driver uses Beacon
+--- a/src/drivers/driver_wextap.c
++++ b/src/drivers/driver_wextap.c
+@@ -499,14 +499,34 @@ wextap_sta_deauth(void *priv, const u8 *
+ 	wpa_printf(MSG_DEBUG, "%s: addr=%s reason_code=%d\n",
+ 			__func__, ether_sprintf(addr), reason_code);
+ 
+ 	return wextap_mlme_generic(drv, addr, IW_MLME_DEAUTH, reason_code);
+ }
+ 
+ static int
++wextap_radius_mac_acl(void *priv)
++{
++	struct wextap_driver_data *drv = priv;
++
++	/* WAR: Set auth to wpa in order to assign ni_authmode = IEEE80211_AUTH_8021X */
++	if (wextap_set_auth_generic(drv, IW_AUTH_WPA_VERSION, IW_AUTH_WPA_VERSION_DISABLED))
++		return -1;
++
++	/* Set auth to IEEE80211_AUTH_8021X */
++	if(wextap_set_auth_generic(drv, IW_AUTH_80211_AUTH_ALG, IW_AUTH_ALG_LEAP))
++		return -1;
++
++	/* Disable privacy */
++	if (wextap_set_privacy(drv, 0))
++		return -1;
++
++	return 0;
++}
++
++static int
+ wextap_flush(void *priv)
+ {
+ 	u8 allsta[ETH_ALEN];
+ 	memset(allsta, 0xff, ETH_ALEN);
+ 	return wextap_sta_deauth(priv, NULL, allsta, 1);
+ }
+ 
+@@ -760,24 +780,28 @@ static int wextap_reset_appfilter(struct
+ }
+ 
+ #ifdef CONFIG_IEEE80211R
+ static int
+ wextap_sta_auth(void *priv, const u8 *own_addr, const u8 *addr, u16 seq,
+ 		 u16 status_code, const u8 *ie, size_t len)
+ {
+-    wpa_printf(MSG_ERROR, "%s: Unsupported\n", __func__);
+-	return -1;
++    if (status_code)
++        wextap_sta_deauth(priv, own_addr, addr, status_code);
++
++    return 0;
+ }
+ 
+ static int
+ wextap_sta_assoc(void *priv, const u8 *own_addr, const u8 *addr,
+ 		  int reassoc, u16 status_code, const u8 *ie, size_t len)
+ {
+-    wpa_printf(MSG_ERROR, "%s: Unsupported\n", __func__);
+-	return -1;
++    if (status_code)
++        wextap_sta_disassoc(priv, own_addr, addr, status_code);
++
++    return 0;
+ }
+ #endif /* CONFIG_IEEE80211R */
+ 
+ 
+ static int
+ wextap_process_wpa_ie(struct wextap_driver_data *drv, struct sta_info *sta)
+ {
+@@ -1044,14 +1068,26 @@ wextap_wireless_event_wireless(struct we
+ 		switch (iwe->cmd) {
+ 		case IWEVEXPIRED:
+ 			drv_event_disassoc(drv->hapd,
+ 					   (u8 *) iwe->u.addr.sa_data);
+ 			break;
+ 		case IWEVREGISTERED:
+ 			wextap_new_sta(drv, (u8 *) iwe->u.addr.sa_data);
++			if (drv->hapd->conf->radius_mac_acl) {
++				struct ieee80211_mgmt mgmt;
++				os_memset(&mgmt, 0, sizeof(mgmt));
++				mgmt.frame_control = IEEE80211_FC(WLAN_FC_TYPE_MGMT, WLAN_FC_STYPE_AUTH);
++				os_memcpy(mgmt.da, drv->hapd->own_addr, ETH_ALEN);
++				os_memcpy(mgmt.sa, (u8 *) iwe->u.addr.sa_data, ETH_ALEN);
++				os_memcpy(mgmt.bssid, drv->hapd->own_addr, ETH_ALEN);
++				mgmt.u.auth.auth_alg = host_to_le16(WLAN_AUTH_OPEN);
++				mgmt.u.auth.auth_transaction = host_to_le16(1);
++				mgmt.u.auth.status_code = host_to_le16(WLAN_STATUS_SUCCESS);
++				ieee802_11_mgmt(drv->hapd, (u8 *)&mgmt, sizeof(mgmt), 0);
++			}
+ 			break;
+ 		case IWEVASSOCREQIE:
+ 			/* Driver hack.. Use IWEVASSOCREQIE to bypass
+ 			 * IWEVCUSTOM size limitations. Need to handle this
+ 			 * just like IWEVCUSTOM.
+ 			 */
+ 		case IWEVCUSTOM:
+@@ -1418,16 +1454,40 @@ static int wextap_set_ap(void *priv, str
+ }
+ 
+ #ifdef CONFIG_IEEE80211R
+ 
+ static int wextap_send_mgmt(void *priv, const u8 *frm, size_t data_len,
+ 			     int noack)
+ {
+-    wpa_printf(MSG_ERROR, "%s: Unsupported\n", __func__);
+-	return -1;
++	struct ieee80211_mgmt *mgmt;
++	u16 fc;
++
++	mgmt = (struct ieee80211_mgmt *) frm;
++	fc = le_to_host16(mgmt->frame_control);
++
++	if (WLAN_FC_GET_TYPE(fc) == WLAN_FC_TYPE_MGMT)
++	{
++	    switch (WLAN_FC_GET_STYPE(fc)) {
++	    case WLAN_FC_STYPE_DISASSOC:
++                wextap_sta_disassoc(priv, mgmt->bssid, mgmt->da, le_to_host16(mgmt->u.disassoc.reason_code));
++                break;
++	    case WLAN_FC_STYPE_DEAUTH:
++                wextap_sta_deauth(priv, mgmt->bssid, mgmt->da, le_to_host16(mgmt->u.deauth.reason_code));
++		break;
++	    case WLAN_FC_STYPE_AUTH:
++                if (mgmt->u.auth.status_code)
++		    wextap_sta_deauth(priv, mgmt->bssid, mgmt->da, le_to_host16(mgmt->u.auth.status_code));
++		break;
++	    default:
++		wpa_printf(MSG_DEBUG, "%s: SubType=%d", __FUNCTION__, WLAN_FC_GET_STYPE(fc));
++                break;
++	    }
++	}
++
++	return 0;
+ }
+ 
+ static int wextap_add_tspec(void *priv, const u8 *addr, u8 *tspec_ie,
+ 			     size_t tspec_ielen)
+ {
+     wpa_printf(MSG_ERROR, "%s: Unsupported\n", __func__);
+ 	return -1;
+@@ -1488,8 +1548,9 @@ const struct wpa_driver_ops wpa_driver_w
+ 	.add_tspec				= wextap_add_tspec,
+ 	.add_sta_node			= wextap_add_sta_node,
+ #endif /* CONFIG_IEEE80211R */
+ 	.send_action			= wextap_send_action,
+ #ifdef CONFIG_WNM
+ 	.wnm_oper				= wextap_wnm_oper,
+ #endif /* CONFIG_WNM */
++	.radius_mac_acl			= wextap_radius_mac_acl,
+ };
+--- a/src/drivers/drivers.mak
++++ b/src/drivers/drivers.mak
+@@ -104,14 +104,15 @@ endif
+ ifdef CONFIG_DRIVER_WEXTAP
+ DRV_AP_CFLAGS += -DCONFIG_DRIVER_WEXTAP
+ DRV_AP_OBJS += ../src/drivers/driver_wextap.o
+ CONFIG_WIRELESS_EXTENSION=y
+ CONFIG_L2_PACKET=linux
+ NEED_NETLINK=y
+ NEED_LINUX_IOCTL=y
++NEED_AP_MLME=y
+ endif
+ 
+ ##### PURE CLIENT DRIVERS
+ 
+ ifdef CONFIG_DRIVER_WEXT
+ DRV_WPA_CFLAGS += -DCONFIG_DRIVER_WEXT
+ CONFIG_WIRELESS_EXTENSION=y
+--- a/src/drivers/drivers.mk
++++ b/src/drivers/drivers.mk
+@@ -105,14 +105,15 @@ endif
+ ifdef CONFIG_DRIVER_WEXTAP
+ DRV_AP_CFLAGS += -DCONFIG_DRIVER_WEXTAP
+ DRV_AP_OBJS += src/drivers/driver_wextap.c
+ CONFIG_WIRELESS_EXTENSION=y
+ CONFIG_L2_PACKET=linux
+ NEED_NETLINK=y
+ NEED_LINUX_IOCTL=y
++NEED_AP_MLME=y
+ endif
+ 
+ ##### PURE CLIENT DRIVERS
+ 
+ ifdef CONFIG_DRIVER_WEXT
+ DRV_WPA_CFLAGS += -DCONFIG_DRIVER_WEXT
+ CONFIG_WIRELESS_EXTENSION=y
+--- a/src/radius/radius_client.c
++++ b/src/radius/radius_client.c
+@@ -45,14 +45,23 @@
+  * RADIUS_CLIENT_NUM_FAILOVER - RADIUS client failover point
+  *
+  * The number of failed retry attempts after which the RADIUS server will be
+  * changed (if one of more backup servers are configured).
+  */
+ #define RADIUS_CLIENT_NUM_FAILOVER 4
+ 
++/**
++ * RADIUS_CLIENT_ACL_MAX_WAIT - RADIUS ACL client maximum retry timeout in seconds
++ */
++#define RADIUS_CLIENT_ACL_MAX_WAIT 9
++
++/**
++ * RADIUS_CLIENT_ACL_MAX_RETRIES - RADIUS ACL client maximum retries
++ */
++#define RADIUS_CLIENT_ACL_MAX_RETRIES 3
+ 
+ /**
+  * struct radius_rx_handler - RADIUS client RX handler
+  *
+  * This data structure is used internally inside the RADIUS client module to
+  * store registered RX handlers. These handlers are registered by calls to
+  * radius_client_register() and unregistered when the RADIUS client is
+@@ -354,17 +363,17 @@ static int radius_client_retransmit(stru
+ 	os_get_reltime(&entry->last_attempt);
+ 	buf = radius_msg_get_buf(entry->msg);
+ 	if (send(s, wpabuf_head(buf), wpabuf_len(buf), 0) < 0)
+ 		radius_client_handle_send_error(radius, s, entry->msg_type);
+ 
+ 	entry->next_try = now + entry->next_wait;
+ 	entry->next_wait *= 2;
+-	if (entry->next_wait > RADIUS_CLIENT_MAX_WAIT)
+-		entry->next_wait = RADIUS_CLIENT_MAX_WAIT;
+-	if (entry->attempts >= RADIUS_CLIENT_MAX_RETRIES) {
++	if (entry->next_wait > (hostapd_is_radius_mac_acl(radius->ctx) ? RADIUS_CLIENT_ACL_MAX_WAIT : RADIUS_CLIENT_MAX_WAIT))
++		entry->next_wait = (hostapd_is_radius_mac_acl(radius->ctx) ? RADIUS_CLIENT_ACL_MAX_WAIT : RADIUS_CLIENT_MAX_WAIT);
++	if (entry->attempts >= (hostapd_is_radius_mac_acl(radius->ctx) ? RADIUS_CLIENT_ACL_MAX_RETRIES : RADIUS_CLIENT_MAX_RETRIES)) {
+ 		wpa_printf(MSG_INFO, "RADIUS: Removing un-ACKed message due to too many failed retransmit attempts");
+ 		return 1;
+ 	}
+ 
+ 	return 0;
+ }
+ 

@@ -1,0 +1,154 @@
+Insert [hostname] into log messages when logging remotely.
+Adapted from: https://dev.openwrt.org/ticket/10435
+
+--- a/sysklogd/syslogd.c
++++ b/sysklogd/syslogd.c
+@@ -187,14 +187,17 @@ enum {
+ 	USE_FEATURE_IPC_SYSLOG(    ,*opt_C = NULL)
+ #define OPTION_PARAM &opt_m, &G.logFilePath, &opt_l \
+ 	USE_FEATURE_ROTATE_LOGFILE(,&opt_s) \
+ 	USE_FEATURE_ROTATE_LOGFILE(,&opt_b) \
+ 	USE_FEATURE_REMOTE_LOG(    ,&G.remoteAddrStr) \
+ 	USE_FEATURE_IPC_SYSLOG(    ,&opt_C)
+ 
++#if ENABLE_FEATURE_REMOTE_LOG
++int split_escape(char *tmpbuf, int len);
++#endif
+ 
+ /* circular buffer variables/structures */
+ #if ENABLE_FEATURE_IPC_SYSLOG
+ 
+ #if CONFIG_FEATURE_IPC_SYSLOG_BUFFER_SIZE < 4
+ #error Sorry, you must set the syslogd buffer size to at least 4KB.
+ #error Please check CONFIG_FEATURE_IPC_SYSLOG_BUFFER_SIZE
+@@ -485,14 +488,48 @@ static void quit_signal(int sig)
+ 	timestamp_and_log_internal("syslogd exiting");
+ 	puts("syslogd exiting");
+ 	if (ENABLE_FEATURE_IPC_SYSLOG)
+ 		ipcsyslog_cleanup();
+ 	kill_myself_with_sig(sig);
+ }
+ 
++#if ENABLE_FEATURE_REMOTE_LOG
++/* tmpbuf[len] is a NUL byte (set by caller), but there can be other,
++ * embedded NULs. Split messages on each of these NULs, parse prio,
++ * escape control chars, and return messages. */
++int split_escape(char *tmpbuf, int len)
++{
++        char *p = tmpbuf;
++        int pri = 0;
++        tmpbuf += len;
++        while (p < tmpbuf) {
++                char c;
++                char *q = G.parsebuf;
++                pri = (LOG_USER | LOG_NOTICE);
++                if (*p == '<') {
++                        pri = bb_strtou(p + 1, &p, 10);
++                        if (*p == '>') p++;
++                        if (pri & ~(LOG_FACMASK | LOG_PRIMASK))
++                                pri = (LOG_USER | LOG_NOTICE);
++                }
++                while ((c = *p++)) {
++                        if (c == '\n') c = ' ';
++                        if (!(c & ~0x1f) && c != '\t') {
++                                *q++ = '^';
++                                c += '@'; /* ^@, ^A, ^B... */
++                        }
++                        *q++ = c;
++                }
++                *q = '\0';
++        }
++
++        return pri;
++}
++#endif
++
+ #ifdef SYSLOGD_MARK
+ static void do_mark(int sig)
+ {
+ 	if (G.markInterval) {
+ 		timestamp_and_log_internal("-- MARK --");
+ 		alarm(G.markInterval);
+ 	}
+@@ -571,14 +608,21 @@ static void handle_send(int err) {
+ }
+ #endif
+ 
+ static void do_syslogd(void) ATTRIBUTE_NORETURN;
+ static void do_syslogd(void)
+ {
+ 	int sock_fd;
++#if ENABLE_FEATURE_REMOTE_LOG
++        int pri = 0;
++        char *timestamp;
++        char *msg;
++        int len = 0;
++        time_t now;
++#endif
+ #if ENABLE_FEATURE_SYSLOGD_DUP
+ 	int last_sz = -1;
+ 	char *last_buf;
+ 	char *recvbuf = G.recvbuf;
+ #else
+ #define recvbuf (G.recvbuf)
+ #endif
+@@ -646,23 +690,53 @@ static void do_syslogd(void)
+ 			if (-1 == G.remoteFD) {
+ 				G.remoteFD = try_to_resolve_remote();
+ 				if (-1 == G.remoteFD)
+ 					goto no_luck;
+ 			}
+ 			/* Stock syslogd sends it '\n'-terminated
+ 			 * over network, mimic that */
+-			recvbuf[sz] = '\n';
+-			/* send message to remote logger, ignore possible error */
+-			/* TODO: on some errors, close and set G.remoteFD to -1
+-			 * so that DNS resolution and connect is retried? */
++			recvbuf[sz] = '\0';
++                        /***********************************************
++                         * ADD by Evil:
++                         * Take the logmsg, split it in pieces and add
++                         * the hostname to it befor loggin it over the
++                         * network.
++                         **********************************************/
++
++                        memset(G.parsebuf, 0, sizeof(G.parsebuf));
++                        memset(G.printbuf, 0, sizeof(G.printbuf));
++
++                        pri = split_escape(recvbuf,sz);
++                        msg = G.parsebuf;
++                        len = strlen(G.parsebuf);
++
++                        if (len < 16 || msg[3] != ' ' || msg[6] != ' '
++                            || msg[9] != ':' || msg[12] != ':' || msg[15] != ' '
++                           ) {
++                            time(&now);
++                            timestamp = ctime(&now) + 4; /* skip day of week */
++                        } else {
++                            now = 0;
++                            timestamp = msg;
++                            msg += 16;
++                        }
++                        timestamp[15] = '\0';
++                        if (option_mask32 & OPT_small)
++                            sprintf(G.printbuf, "<%d>%s %s\n", pri, timestamp, msg);
++                        else {
++                            char res[20];
++                            parse_fac_prio_20(pri, res);
++                            sprintf(G.printbuf, "<%d>%s [%.64s] %s %s\n", pri, timestamp, G.hostname, res, msg);
++                        }
++                        len = strlen(G.printbuf);
+                         if (!G.tcp) {
+-                            if (sendto(G.remoteFD, recvbuf, sz+1, MSG_DONTWAIT | MSG_NOSIGNAL,
++                            if (sendto(G.remoteFD, G.printbuf, len, MSG_DONTWAIT | MSG_NOSIGNAL,
+ 				    &G.remoteAddr->u.sa, G.remoteAddr->len) == -1)
+                                 handle_send(errno);
+-                        } else if (send(G.remoteFD, recvbuf, sz+1, MSG_DONTWAIT | MSG_NOSIGNAL) == -1)
++                        } else if (send(G.remoteFD, G.printbuf, len, MSG_DONTWAIT | MSG_NOSIGNAL) == -1)
+                             handle_send(errno);
+  no_luck: ;
+ 		}
+ #endif
+ 		if (!ENABLE_FEATURE_REMOTE_LOG || (option_mask32 & OPT_locallog)) {
+ 			recvbuf[sz] = '\0'; /* ensure it *is* NUL terminated */
+ 			split_escape_and_log(recvbuf, sz);

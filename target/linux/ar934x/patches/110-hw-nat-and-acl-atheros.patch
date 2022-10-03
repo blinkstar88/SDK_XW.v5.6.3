@@ -1,0 +1,779 @@
+--- a/include/linux/netfilter.h
++++ b/include/linux/netfilter.h
+@@ -162,14 +162,18 @@ int nf_hook_slow(u_int8_t pf, unsigned i
+ static inline int nf_hook_thresh(u_int8_t pf, unsigned int hook,
+ 				 struct sk_buff *skb,
+ 				 struct net_device *indev,
+ 				 struct net_device *outdev,
+ 				 int (*okfn)(struct sk_buff *), int thresh,
+ 				 int cond)
+ {
++#ifdef CONFIG_ATH_HW_NAT
++        if (skb->ath_hw_nat_fw_flags)
++                return 1;
++#endif
+ 	if (!cond)
+ 		return 1;
+ #ifndef CONFIG_NETFILTER_DEBUG
+ 	if (list_empty(&nf_hooks[pf][hook]))
+ 		return 1;
+ #endif
+ 	return nf_hook_slow(pf, hook, skb, indev, outdev, okfn, thresh);
+--- a/include/linux/netfilter/nf_conntrack_common.h
++++ b/include/linux/netfilter/nf_conntrack_common.h
+@@ -69,14 +69,48 @@ enum ip_conntrack_status {
+ 	/* Connection is dying (removed from lists), can not be unset. */
+ 	IPS_DYING_BIT = 9,
+ 	IPS_DYING = (1 << IPS_DYING_BIT),
+ 
+ 	/* Connection has fixed timeout. */
+ 	IPS_FIXED_TIMEOUT_BIT = 10,
+ 	IPS_FIXED_TIMEOUT = (1 << IPS_FIXED_TIMEOUT_BIT),
++
++#ifdef CONFIG_ATHRS_HW_NAT
++
++        /* Marked when a ct/nat help owns this pkt */
++        IPS_NAT_ALG_PKT_BIT = 11,
++        IPS_NAT_ALG_PKT = (1 << IPS_NAT_ALG_PKT_BIT),
++
++        /* Marked when the tuple is added to the h/w nat */
++        IPS_ATHR_HW_NAT_ADDED_BIT = 12,
++        IPS_ATHR_HW_NAT_ADDED = (1 << IPS_ATHR_HW_NAT_ADDED_BIT),
++
++        /* Marked when the tuple is added to the h/w nat for a UDP pkt*/
++        IPS_ATHR_HW_NAT_IS_UDP_BIT = 13,
++        IPS_ATHR_HW_NAT_IS_UDP = (1 << IPS_ATHR_HW_NAT_IS_UDP_BIT),
++
++        /* Marked when the tuple is added to the h/w nat for a UDP pkt*/
++        IPS_ATHR_HW_NAT_IS_ONLY_EGRESS_BIT = 14,
++        IPS_ATHR_HW_NAT_IS_ONLY_EGRESS = (1 << IPS_ATHR_HW_NAT_IS_ONLY_EGRESS_BIT),
++
++        /* Marked when the tuple is added to the h/w nat for a UDP pkt*/
++        IPS_ATHR_SW_NAT_SKIPPED_BIT = 15,
++        IPS_ATHR_SW_NAT_SKIPPED = (1 << IPS_ATHR_SW_NAT_SKIPPED_BIT),
++
++        /*
++         * Addded for nat frag table fast hash entry lookup
++         */
++
++	IPS_ATHR_HW_CT_INGRESS_BIT = 16,
++	IPS_ATHR_HW_CT_INGRESS = (1 << IPS_ATHR_HW_CT_INGRESS_BIT),
++
++	IPS_ATHR_HW_CT_EGRESS_BIT = 17,
++	IPS_ATHR_HW_CT_EGRESS = (1 << IPS_ATHR_HW_CT_EGRESS_BIT),
++
++#endif
+ };
+ 
+ #ifdef __KERNEL__
+ struct ip_conntrack_stat
+ {
+ 	unsigned int searched;
+ 	unsigned int found;
+--- a/include/linux/netfilter_ipv4/ip_tables.h
++++ b/include/linux/netfilter_ipv4/ip_tables.h
+@@ -30,14 +30,22 @@
+ #define IPT_FUNCTION_MAXNAMELEN XT_FUNCTION_MAXNAMELEN
+ #define IPT_TABLE_MAXNAMELEN XT_TABLE_MAXNAMELEN
+ #define ipt_match xt_match
+ #define ipt_target xt_target
+ #define ipt_table xt_table
+ #define ipt_get_revision xt_get_revision
+ 
++#ifdef CONFIG_ATHRS_HW_ACL
++
++typedef struct {
++    void    (*nf_parse_tables)        (void *entry0, unsigned int size, char *name);
++} athr_nf_acl_ops_t;
++
++extern athr_nf_acl_ops_t *athr_acl_sw_ops;
++#endif
+ /* Yes, Virginia, you have to zero the padding. */
+ struct ipt_ip {
+ 	/* Source and destination IP addr */
+ 	struct in_addr src, dst;
+ 	/* Mask for src and dest IP addr */
+ 	struct in_addr smsk, dmsk;
+ 	char iniface[IFNAMSIZ], outiface[IFNAMSIZ];
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -400,14 +400,17 @@ struct sk_buff {
+ 	/* These elements must be at the end, see alloc_skb() for details.  */
+ 	sk_buff_data_t		tail;
+ 	sk_buff_data_t		end;
+ 	unsigned char		*head,
+ 				*data;
+ 	unsigned int		truesize;
+ 	atomic_t		users;
++#ifdef CONFIG_ATHRS_HW_NAT
++        __u32                   ath_hw_nat_fw_flags;
++#endif
+ };
+ 
+ #ifdef __KERNEL__
+ /*
+  *	Handling routines are only of interest to the kernel
+  */
+ #include <linux/slab.h>
+--- a/include/net/netfilter/nf_conntrack.h
++++ b/include/net/netfilter/nf_conntrack.h
+@@ -127,15 +127,17 @@ struct nf_conn {
+ 		/*
+ 		 * application layer data so far. NULL after match decision.
+ 		 */
+ 		char *app_data;
+ 		unsigned int app_data_len;
+ 	} layer7;
+ #endif
+-
++#ifdef CONFIG_ATHRS_HW_NAT
++        void *hwnat_priv;
++#endif
+ 	/* Storage reserved for other modules: */
+ 	union nf_conntrack_proto proto;
+ 
+ 	/* Extensions */
+ 	struct nf_ct_ext *ext;
+ #ifdef CONFIG_NET_NS
+ 	struct net *ct_net;
+@@ -212,14 +214,30 @@ extern void nf_ct_l3proto_module_put(uns
+ extern void *nf_ct_alloc_hashtable(unsigned int *sizep, int *vmalloced, int nulls);
+ 
+ extern void nf_ct_free_hashtable(void *hash, int vmalloced, unsigned int size);
+ 
+ extern struct nf_conntrack_tuple_hash *
+ __nf_conntrack_find(struct net *net, const struct nf_conntrack_tuple *tuple);
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++
++typedef struct {
++    void                (*nf_process_nat)      (struct sk_buff *skb, struct nf_conn *ct,
++                                                enum ip_conntrack_info ctinfo, u_int8_t protonum);
++    struct nf_conn *    (*nf_find_get)         (struct net *net, struct nf_conntrack_tuple *tuple,
++                                                __u32 flag, struct nf_conntrack_tuple_hash **h);
++    void                (*get_wan_ipaddr)      (uint32_t *wan_ip, uint8_t wan_index);
++    void                (*nf_alter_port)       (struct nf_conntrack_tuple, struct nf_conntrack_tuple,
++                                                struct nf_conn *ct);
++    int                 (*nf_tuple_taken)      (const struct nf_conntrack_tuple *, const struct nf_conn *ct);
++} athr_nf_nat_ops_t;
++
++extern athr_nf_nat_ops_t *athr_nat_sw_ops;
++#endif
++
+ extern void nf_conntrack_hash_insert(struct nf_conn *ct);
+ extern void nf_ct_delete_from_lists(struct nf_conn *ct);
+ extern void nf_ct_insert_dying_list(struct nf_conn *ct);
+ 
+ extern void nf_conntrack_flush_report(struct net *net, u32 pid, int report);
+ 
+ extern bool nf_ct_get_tuplepr(const struct sk_buff *skb,
+--- a/net/bridge/br_input.c
++++ b/net/bridge/br_input.c
+@@ -131,14 +131,18 @@ struct sk_buff *br_handle_frame(struct n
+ 	if (!is_valid_ether_addr(eth_hdr(skb)->h_source))
+ 		goto drop;
+ 
+ 	skb = skb_share_check(skb, GFP_ATOMIC);
+ 	if (!skb)
+ 		return NULL;
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++        skb->ath_hw_nat_fw_flags = 1;
++#endif
++
+ 	if (unlikely(is_link_local(dest))) {
+ 		/* Pause frames shouldn't be passed up by driver anyway */
+ 		if (skb->protocol == htons(ETH_P_PAUSE))
+ 			goto drop;
+ 
+ 		/* If STP is turned off, then forward */
+ 		if (p->br->stp_enabled == BR_NO_STP && dest[5] == 0)
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -399,15 +399,17 @@ struct sk_buff *__alloc_skb(unsigned int
+ 	skb_reset_tail_pointer(skb);
+ 	skb->end = skb->tail + size;
+ 	kmemcheck_annotate_bitfield(skb, flags1);
+ 	kmemcheck_annotate_bitfield(skb, flags2);
+ #ifdef NET_SKBUFF_DATA_USES_OFFSET
+ 	skb->mac_header = ~0U;
+ #endif
+-
++#ifdef CONFIG_ATHRS_HW_NAT
++	skb->ath_hw_nat_fw_flags = 0;
++#endif
+ 	/* make sure we initialize shinfo sequentially */
+ 	shinfo = skb_shinfo(skb);
+ 	atomic_set(&shinfo->dataref, 1);
+ 	shinfo->nr_frags  = 0;
+ 	shinfo->gso_size = 0;
+ 	shinfo->gso_segs = 0;
+ 	shinfo->gso_type = 0;
+@@ -871,14 +873,17 @@ static void copy_skb_header(struct sk_bu
+ {
+ #ifndef NET_SKBUFF_DATA_USES_OFFSET
+ 	/*
+ 	 *	Shift between the two data areas in bytes
+ 	 */
+ 	unsigned long offset = new->data - old->data;
+ #endif
++#ifdef CONFIG_ATHRS_HW_NAT
++        new->ath_hw_nat_fw_flags = old->ath_hw_nat_fw_flags;
++#endif
+ 
+ 	__copy_skb_header(new, old);
+ 
+ #ifndef NET_SKBUFF_DATA_USES_OFFSET
+ 	/* {transport,network,mac}_header are relative to skb->head */
+ 	new->transport_header += offset;
+ 	new->network_header   += offset;
+--- a/net/ipv4/netfilter/Kconfig
++++ b/net/ipv4/netfilter/Kconfig
+@@ -216,14 +216,28 @@ config NF_NAT_SNMP_BASIC
+ 	  conflicting addresses.  It works by modifying IP addresses
+ 	  inside SNMP payloads to match IP-layer NAT mapping.
+ 
+ 	  This is the "basic" form of SNMP-ALG, as described in RFC 2962
+ 
+ 	  To compile it as a module, choose M here.  If unsure, say N.
+ 
++config ATHRS_HW_NAT
++	bool "Atheros H/W NAT"
++	depends on NF_NAT
++	help
++	  This option adds the support for atheros hardware nat
++	  accelerator.
++
++config ATHRS_HW_ACL
++	bool "Atheros H/W ACL"
++	depends on IP_NF_FILTER
++	help
++	  This option adds the support for atheros hardware firewall
++	  feature.
++
+ # If they want FTP, set to $CONFIG_IP_NF_NAT (m or y),
+ # or $CONFIG_IP_NF_FTP (m or y), whichever is weaker.
+ # From kconfig-language.txt:
+ #
+ #           <expr> '&&' <expr>                   (6)
+ #
+ # (6) Returns the result of min(/expr/, /expr/).
+--- a/net/ipv4/netfilter/ip_tables.c
++++ b/net/ipv4/netfilter/ip_tables.c
+@@ -56,14 +56,21 @@ do {								\
+ 		printk("IP_NF_ASSERT: %s:%s:%u\n",		\
+ 		       __func__, __FILE__, __LINE__);	\
+ } while(0)
+ #else
+ #define IP_NF_ASSERT(x)
+ #endif
+ 
++#ifdef CONFIG_ATHRS_HW_ACL
++
++athr_nf_acl_ops_t *athr_acl_sw_ops;
++EXPORT_SYMBOL(athr_acl_sw_ops);
++
++#endif
++
+ #if 0
+ /* All the better to debug you with... */
+ #define static
+ #define inline
+ #endif
+ 
+ /*
+@@ -844,14 +851,17 @@ translate_table(const char *name,
+ 		unsigned int size,
+ 		unsigned int number,
+ 		const unsigned int *hook_entries,
+ 		const unsigned int *underflows)
+ {
+ 	unsigned int i;
+ 	int ret;
++#ifdef CONFIG_ATHRS_HW_ACL
++        void (*athr_parse_iptables)(void *, unsigned int, char *);
++#endif
+ 
+ 	newinfo->size = size;
+ 	newinfo->number = number;
+ 
+ 	/* Init all hooks to impossible value. */
+ 	for (i = 0; i < NF_INET_NUMHOOKS; i++) {
+ 		newinfo->hook_entry[i] = 0xFFFFFFFF;
+@@ -909,14 +919,22 @@ translate_table(const char *name,
+ 
+ 	/* And one copy for every other CPU */
+ 	for_each_possible_cpu(i) {
+ 		if (newinfo->entries[i] && newinfo->entries[i] != entry0)
+ 			memcpy(newinfo->entries[i], entry0, newinfo->size);
+ 	}
+ 
++#ifdef CONFIG_ATHRS_HW_ACL
++        if (athr_acl_sw_ops) {
++                athr_parse_iptables = rcu_dereference(athr_acl_sw_ops->nf_parse_tables);
++                if (athr_parse_iptables)
++                        athr_parse_iptables(entry0, newinfo->size, (char *)name);
++        }
++#endif
++
+ 	return ret;
+ }
+ 
+ /* Gets counters. */
+ static inline int
+ add_entry_to_counter(const struct ipt_entry *e,
+ 		     struct xt_counters total[],
+--- a/net/ipv4/netfilter/nf_nat_core.c
++++ b/net/ipv4/netfilter/nf_nat_core.c
+@@ -280,14 +280,18 @@ nf_nat_setup_info(struct nf_conn *ct,
+ 		  const struct nf_nat_range *range,
+ 		  enum nf_nat_manip_type maniptype)
+ {
+ 	struct net *net = nf_ct_net(ct);
+ 	struct nf_conntrack_tuple curr_tuple, new_tuple;
+ 	struct nf_conn_nat *nat;
+ 	int have_to_hash = !(ct->status & IPS_NAT_DONE_MASK);
++#ifdef CONFIG_ATHRS_HW_NAT
++        void (*athr_ct_alter_port)(struct nf_conntrack_tuple,
++                                   struct nf_conntrack_tuple, struct nf_conn *);
++#endif
+ 
+ 	/* nat helper or nfctnetlink also setup binding */
+ 	nat = nfct_nat(ct);
+ 	if (!nat) {
+ 		nat = nf_ct_ext_add(ct, NF_CT_EXT_NAT, GFP_ATOMIC);
+ 		if (nat == NULL) {
+ 			pr_debug("failed to add NAT extension\n");
+@@ -312,14 +316,21 @@ nf_nat_setup_info(struct nf_conn *ct,
+ 	if (!nf_ct_tuple_equal(&new_tuple, &curr_tuple)) {
+ 		struct nf_conntrack_tuple reply;
+ 
+ 		/* Alter conntrack table so will recognize replies. */
+ 		nf_ct_invert_tuplepr(&reply, &new_tuple);
+ 		nf_conntrack_alter_reply(ct, &reply);
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++                if (athr_nat_sw_ops) {
++                        athr_ct_alter_port = rcu_dereference(athr_nat_sw_ops->nf_alter_port);
++                        if (athr_ct_alter_port)
++                                athr_ct_alter_port(curr_tuple, new_tuple, ct);
++                }
++#endif
+ 		/* Non-atomic: we own this at the moment. */
+ 		if (maniptype == IP_NAT_MANIP_SRC)
+ 			ct->status |= IPS_SRC_NAT;
+ 		else
+ 			ct->status |= IPS_DST_NAT;
+ 	}
+ 
+--- a/net/ipv4/netfilter/nf_nat_standalone.c
++++ b/net/ipv4/netfilter/nf_nat_standalone.c
+@@ -80,14 +80,20 @@ nf_nat_fn(unsigned int hooknum,
+ {
+ 	struct nf_conn *ct;
+ 	enum ip_conntrack_info ctinfo;
+ 	struct nf_conn_nat *nat;
+ 	/* maniptype == SRC for postrouting. */
+ 	enum nf_nat_manip_type maniptype = HOOK2MANIP(hooknum);
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++        if (skb->ath_hw_nat_fw_flags == 2 || skb->ath_hw_nat_fw_flags == 3) {
++                return NF_ACCEPT;
++        }
++#endif
++
+ 	/* We never see fragments: conntrack defrags on pre-routing
+ 	   and local-out, and nf_nat_out protects post-routing. */
+ 	NF_CT_ASSERT(!(ip_hdr(skb)->frag_off & htons(IP_MF | IP_OFFSET)));
+ 
+ 	ct = nf_ct_get(skb, &ctinfo);
+ 	/* Can't track?  It's not due to stress, or conntrack would
+ 	   have dropped it.  Hence it's the user's responsibilty to
+@@ -99,16 +105,24 @@ nf_nat_fn(unsigned int hooknum,
+ 	/* Don't try to NAT if this packet is not conntracked */
+ 	if (ct == &nf_conntrack_untracked)
+ 		return NF_ACCEPT;
+ 
+ 	nat = nfct_nat(ct);
+ 	if (!nat) {
+ 		/* NAT module was loaded late. */
+-		if (nf_ct_is_confirmed(ct))
++		if (nf_ct_is_confirmed(ct)) {
++#ifdef CONFIG_ATHRS_HW_NAT
++			if(!test_bit(IPS_ATHR_HW_NAT_ADDED_BIT, &ct->status)) {
++#endif
++				printk("CT not confirmed ct=%p\n\n",ct);
+ 			return NF_ACCEPT;
++#ifdef CONFIG_ATHRS_HW_NAT
++			}
++#endif
++		}
+ 		nat = nf_ct_ext_add(ct, NF_CT_EXT_NAT, GFP_ATOMIC);
+ 		if (nat == NULL) {
+ 			pr_debug("failed to add NAT extension\n");
+ 			return NF_ACCEPT;
+ 		}
+ 	}
+ 
+--- a/net/netfilter/core.c
++++ b/net/netfilter/core.c
+@@ -20,14 +20,17 @@
+ #include <linux/proc_fs.h>
+ #include <linux/mutex.h>
+ #include <net/net_namespace.h>
+ #include <net/sock.h>
+ 
+ #include "nf_internals.h"
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++#include <net/netfilter/nf_conntrack.h>
++#endif /* CONFIG_ATHRS_HW_NAT */
+ static DEFINE_MUTEX(afinfo_mutex);
+ 
+ const struct nf_afinfo *nf_afinfo[NFPROTO_NUMPROTO] __read_mostly;
+ EXPORT_SYMBOL(nf_afinfo);
+ 
+ int nf_register_afinfo(const struct nf_afinfo *afinfo)
+ {
+@@ -232,16 +235,27 @@ EXPORT_SYMBOL(nf_ct_attach);
+ 
+ void (*nf_ct_destroy)(struct nf_conntrack *);
+ EXPORT_SYMBOL(nf_ct_destroy);
+ 
+ void nf_conntrack_destroy(struct nf_conntrack *nfct)
+ {
+ 	void (*destroy)(struct nf_conntrack *);
+-
++#ifdef CONFIG_ATHRS_HW_NAT
++	struct nf_conn *ct = (struct nf_conn *)nfct;
++        void (*athr_process_hwnat)(struct sk_buff *, struct nf_conn *,
++                                   enum ip_conntrack_info, u_int8_t);
++#endif
+ 	rcu_read_lock();
++#ifdef CONFIG_ATHRS_HW_NAT
++        if (athr_nat_sw_ops) {
++                athr_process_hwnat = rcu_dereference(athr_nat_sw_ops->nf_process_nat);
++                if (athr_process_hwnat)
++                        athr_process_hwnat(NULL, ct, 0, 0);
++        }
++#endif
+ 	destroy = rcu_dereference(nf_ct_destroy);
+ 	BUG_ON(destroy == NULL);
+ 	destroy(nfct);
+ 	rcu_read_unlock();
+ }
+ EXPORT_SYMBOL(nf_conntrack_destroy);
+ #endif /* CONFIG_NF_CONNTRACK */
+--- a/net/netfilter/nf_conntrack_core.c
++++ b/net/netfilter/nf_conntrack_core.c
+@@ -1,8 +1,8 @@
+-/* Connection state tracking for netfilter.  This is separated from,
++ /* Connection state tracking for netfilter.  This is separated from,
+    but required by, the NAT layer; it can also be used by an iptables
+    extension. */
+ 
+ /* (C) 1999-2001 Paul `Rusty' Russell
+  * (C) 2002-2006 Netfilter Core Team <coreteam@netfilter.org>
+  * (C) 2003,2004 USAGI/WIDE Project <http://www.linux-ipv6.org>
+  *
+@@ -28,14 +28,15 @@
+ #include <linux/notifier.h>
+ #include <linux/kernel.h>
+ #include <linux/netdevice.h>
+ #include <linux/socket.h>
+ #include <linux/mm.h>
+ #include <linux/nsproxy.h>
+ #include <linux/rculist_nulls.h>
++#include <linux/ip.h>
+ 
+ #include <net/netfilter/nf_conntrack.h>
+ #include <net/netfilter/nf_conntrack_l3proto.h>
+ #include <net/netfilter/nf_conntrack_l4proto.h>
+ #include <net/netfilter/nf_conntrack_expect.h>
+ #include <net/netfilter/nf_conntrack_helper.h>
+ #include <net/netfilter/nf_conntrack_core.h>
+@@ -63,14 +64,25 @@ EXPORT_SYMBOL_GPL(nf_conntrack_max);
+ 
+ struct nf_conn nf_conntrack_untracked __read_mostly;
+ EXPORT_SYMBOL_GPL(nf_conntrack_untracked);
+ 
+ static int nf_conntrack_hash_rnd_initted;
+ static unsigned int nf_conntrack_hash_rnd;
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++
++athr_nf_nat_ops_t *athr_nat_sw_ops;
++EXPORT_SYMBOL_GPL(athr_nat_sw_ops);
++
++u_int32_t hash_conntrack(const struct net *net,
++			 const struct nf_conntrack_tuple *tuple)
++EXPORT_SYMBOL(hash_conntrack);
++
++#endif
++
+ static u_int32_t __hash_conntrack(const struct nf_conntrack_tuple *tuple,
+ 				  unsigned int size, unsigned int rnd)
+ {
+ 	unsigned int n;
+ 	u_int32_t h;
+ 
+ 	/* The direction must be ignored, so we hash everything up to the
+@@ -81,16 +93,21 @@ static u_int32_t __hash_conntrack(const
+ 	h = jhash2((u32 *)tuple, n,
+ 		   rnd ^ (((__force __u16)tuple->dst.u.all << 16) |
+ 			  tuple->dst.protonum));
+ 
+ 	return ((u64)h * size) >> 32;
+ }
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++u_int32_t hash_conntrack(const struct net *net,
++			 const struct nf_conntrack_tuple *tuple)
++#else
+ static inline u_int32_t hash_conntrack(const struct net *net,
+ 				       const struct nf_conntrack_tuple *tuple)
++#endif
+ {
+ 	return __hash_conntrack(tuple, net->ct.htable_size,
+ 				nf_conntrack_hash_rnd);
+ }
+ 
+ bool
+ nf_ct_get_tuple(const struct sk_buff *skb,
+@@ -276,14 +293,25 @@ void nf_ct_insert_dying_list(struct nf_c
+ }
+ EXPORT_SYMBOL_GPL(nf_ct_insert_dying_list);
+ 
+ static void death_by_timeout(unsigned long ul_conntrack)
+ {
+ 	struct nf_conn *ct = (void *)ul_conntrack;
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++        void (*athr_process_hwnat)(struct sk_buff *, struct nf_conn *,
++                                   enum ip_conntrack_info, u_int8_t);
++
++        if (athr_nat_sw_ops) {
++                athr_process_hwnat = rcu_dereference(athr_nat_sw_ops->nf_process_nat);
++                if (athr_process_hwnat)
++                        athr_process_hwnat(NULL, ct, 0, 0);
++        }
++#endif
++
+ 	if (!test_bit(IPS_DYING_BIT, &ct->status) &&
+ 	    unlikely(nf_conntrack_event(IPCT_DESTROY, ct) < 0)) {
+ 		/* destroy event was not delivered */
+ 		nf_ct_delete_from_lists(ct);
+ 		nf_ct_insert_dying_list(ct);
+ 		return;
+ 	}
+@@ -490,14 +518,24 @@ nf_conntrack_tuple_taken(const struct nf
+ 			rcu_read_unlock_bh();
+ 			return 1;
+ 		}
+ 		NF_CT_STAT_INC(net, searched);
+ 	}
+ 	rcu_read_unlock_bh();
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++        if (athr_nat_sw_ops) {
++		int (*athr_tuple_taken)(const struct nf_conntrack_tuple *,
++					const struct nf_conn *);
++                athr_tuple_taken = rcu_dereference(athr_nat_sw_ops->nf_tuple_taken);
++                if (athr_tuple_taken)
++                        return athr_tuple_taken(tuple, ignored_conntrack);
++        }
++#endif
++
+ 	return 0;
+ }
+ EXPORT_SYMBOL_GPL(nf_conntrack_tuple_taken);
+ 
+ #define NF_CT_EVICTION_RANGE	8
+ 
+ /* There's a small race here where we may free a just-assured
+@@ -619,30 +657,40 @@ void nf_conntrack_free(struct nf_conn *c
+ }
+ EXPORT_SYMBOL_GPL(nf_conntrack_free);
+ 
+ /* Allocate a new conntrack: we return -ENOMEM if classification
+    failed due to stress.  Otherwise it really is unclassifiable. */
+ static struct nf_conntrack_tuple_hash *
+ init_conntrack(struct net *net,
+-	       const struct nf_conntrack_tuple *tuple,
++	       struct nf_conntrack_tuple *tuple,
+ 	       struct nf_conntrack_l3proto *l3proto,
+ 	       struct nf_conntrack_l4proto *l4proto,
+ 	       struct sk_buff *skb,
+-	       unsigned int dataoff)
++	       unsigned int dataoff
++	       )
+ {
+ 	struct nf_conn *ct;
+ 	struct nf_conn_help *help;
+ 	struct nf_conntrack_tuple repl_tuple;
+ 	struct nf_conntrack_expect *exp;
++#ifdef CONFIG_ATHRS_HW_NAT
++        void (*athr_get_wan_addr)(uint32_t *);
++#endif
+ 
+ 	if (!nf_ct_invert_tuple(&repl_tuple, tuple, l3proto, l4proto)) {
+ 		pr_debug("Can't invert tuple.\n");
+ 		return NULL;
+ 	}
+-
++#ifdef CONFIG_ATHRS_HW_NAT
++        if ((skb->ath_hw_nat_fw_flags == 3) && athr_nat_sw_ops) {
++                athr_get_wan_addr = rcu_dereference(athr_nat_sw_ops->get_wan_ipaddr);
++                if (athr_get_wan_addr)
++                        athr_get_wan_addr(&tuple->dst.u3.ip);
++        }
++#endif
+ 	ct = nf_conntrack_alloc(net, tuple, &repl_tuple, GFP_ATOMIC);
+ 	if (IS_ERR(ct)) {
+ 		pr_debug("Can't allocate conntrack.\n");
+ 		return (struct nf_conntrack_tuple_hash *)ct;
+ 	}
+ 
+ 	if (!l4proto->new(ct, skb, dataoff)) {
+@@ -681,14 +729,18 @@ init_conntrack(struct net *net,
+ 		NF_CT_STAT_INC(net, new);
+ 	}
+ 
+ 	/* Overload tuple linked list to put us in unconfirmed list. */
+ 	hlist_nulls_add_head_rcu(&ct->tuplehash[IP_CT_DIR_ORIGINAL].hnnode,
+ 		       &net->ct.unconfirmed);
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++	if(skb->ath_hw_nat_fw_flags == 3)
++		set_bit(IPS_ATHR_SW_NAT_SKIPPED_BIT, &ct->status);
++#endif
+ 	spin_unlock_bh(&nf_conntrack_lock);
+ 
+ 	if (exp) {
+ 		if (exp->expectfn)
+ 			exp->expectfn(ct, exp);
+ 		nf_ct_expect_put(exp);
+ 	}
+@@ -705,35 +757,56 @@ resolve_normal_ct(struct net *net,
+ 		  u_int8_t protonum,
+ 		  struct nf_conntrack_l3proto *l3proto,
+ 		  struct nf_conntrack_l4proto *l4proto,
+ 		  int *set_reply,
+ 		  enum ip_conntrack_info *ctinfo)
+ {
+ 	struct nf_conntrack_tuple tuple;
+-	struct nf_conntrack_tuple_hash *h;
+-	struct nf_conn *ct;
++	struct nf_conntrack_tuple_hash *h = NULL;
++	struct nf_conn *ct = NULL;
++#ifdef CONFIG_ATHRS_HW_NAT
++        struct nf_conn *(*athr_find_get)(struct net *, struct nf_conntrack_tuple *,
++                                         __u32, struct nf_conntrack_tuple_hash **);
++#endif
+ 
+ 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
+ 			     dataoff, l3num, protonum, &tuple, l3proto,
+ 			     l4proto)) {
+ 		pr_debug("resolve_normal_ct: Can't get tuple\n");
+ 		return NULL;
+ 	}
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++        /*
++         * for ingress, change the dest ip addr to wan router ip addr
++         * so as to make conntrack to find the match. Should be called only
++         * for DNAT */
++        if (athr_nat_sw_ops) {
++                athr_find_get = rcu_dereference(athr_nat_sw_ops->nf_find_get);
++                if (athr_find_get) {
++                        ct = athr_find_get(net, &tuple, skb->ath_hw_nat_fw_flags, &h);
++                        if (ct)
++                                goto out;
++                }
++        }
++#endif
++
+ 	/* look for tuple match */
+ 	h = nf_conntrack_find_get(net, &tuple);
+ 	if (!h) {
+ 		h = init_conntrack(net, &tuple, l3proto, l4proto, skb, dataoff);
+ 		if (!h)
+ 			return NULL;
+ 		if (IS_ERR(h))
+ 			return (void *)h;
+ 	}
+ 	ct = nf_ct_tuplehash_to_ctrack(h);
+-
++#ifdef CONFIG_ATHRS_HW_NAT
++out:
++#endif
+ 	/* It exists; we have (non-exclusive) reference. */
+ 	if (NF_CT_DIRECTION(h) == IP_CT_DIR_REPLY) {
+ 		*ctinfo = IP_CT_ESTABLISHED + IP_CT_IS_REPLY;
+ 		/* Please set reply bit if this packet OK */
+ 		*set_reply = 1;
+ 	} else {
+ 		/* Once we've had two way comms, always ESTABLISHED. */
+@@ -763,14 +836,18 @@ nf_conntrack_in(struct net *net, u_int8_
+ 	enum ip_conntrack_info ctinfo;
+ 	struct nf_conntrack_l3proto *l3proto;
+ 	struct nf_conntrack_l4proto *l4proto;
+ 	unsigned int dataoff;
+ 	u_int8_t protonum;
+ 	int set_reply = 0;
+ 	int ret;
++#ifdef CONFIG_ATHRS_HW_NAT
++        void (*athr_process_hwnat)(struct sk_buff *, struct nf_conn *,
++                                   enum ip_conntrack_info, u_int8_t);
++#endif
+ 
+ 	/* Previously seen (loopback or untracked)?  Ignore. */
+ 	if (skb->nfct) {
+ 		NF_CT_STAT_INC_ATOMIC(net, ignore);
+ 		return NF_ACCEPT;
+ 	}
+ 
+@@ -786,15 +863,20 @@ nf_conntrack_in(struct net *net, u_int8_
+ 	}
+ 
+ 	l4proto = __nf_ct_l4proto_find(pf, protonum);
+ 
+ 	/* It may be an special packet, error, unclean...
+ 	 * inverse of the return code tells to the netfilter
+ 	 * core what to do with the packet. */
++
++#ifdef CONFIG_ATHRS_HW_NAT
++        if ((protonum == IPPROTO_ICMP) && (l4proto->error != NULL)) {
++#else
+ 	if (l4proto->error != NULL) {
++#endif
+ 		ret = l4proto->error(net, skb, dataoff, &ctinfo, pf, hooknum);
+ 		if (ret <= 0) {
+ 			NF_CT_STAT_INC_ATOMIC(net, error);
+ 			NF_CT_STAT_INC_ATOMIC(net, invalid);
+ 			return -ret;
+ 		}
+ 	}
+@@ -827,14 +909,22 @@ nf_conntrack_in(struct net *net, u_int8_
+ 			NF_CT_STAT_INC_ATOMIC(net, drop);
+ 		return -ret;
+ 	}
+ 
+ 	if (set_reply && !test_and_set_bit(IPS_SEEN_REPLY_BIT, &ct->status))
+ 		nf_conntrack_event_cache(IPCT_STATUS, ct);
+ 
++#ifdef CONFIG_ATHRS_HW_NAT
++        if (athr_nat_sw_ops) {
++                athr_process_hwnat = rcu_dereference(athr_nat_sw_ops->nf_process_nat);
++                if (athr_process_hwnat)
++                        athr_process_hwnat(skb, ct, ctinfo, protonum);
++        }
++#endif
++
+ 	return ret;
+ }
+ EXPORT_SYMBOL_GPL(nf_conntrack_in);
+ 
+ bool nf_ct_invert_tuplepr(struct nf_conntrack_tuple *inverse,
+ 			  const struct nf_conntrack_tuple *orig)
+ {

@@ -1,0 +1,11 @@
+<div id="warning">
+<table cellspacing="0" cellpadding="0" id="warningtbl" class="warningtbl" <?if (isset($warning_msg) && (strlen($warning_msg) > 0)) { echo "style=\"display: block\"";}>>
+<tr>
+<td class="infoleft">&nbsp;</td>
+<td class="infocenter" valign="top">
+    <div id="info"><?if (isset($warning_msg) && (strlen($warning_msg) > 0)) { echo $warning_msg; }></div>
+</td>
+<td class="inforight">&nbsp;</td>
+</tr>
+</table>
+</div>

@@ -1,0 +1,23 @@
+--- a/net/bridge/br_netfilter.c
++++ b/net/bridge/br_netfilter.c
+@@ -706,17 +706,17 @@ static unsigned int br_nf_forward_ip(uns
+ 		nf_bridge->mask |= BRNF_PKT_TYPE;
+ 	}
+ 
+ 	/* The physdev module checks on this */
+ 	nf_bridge->mask |= BRNF_BRIDGED;
+ 	nf_bridge->physoutdev = skb->dev;
+ 
+-	NF_HOOK(pf, NF_INET_FORWARD, skb, bridge_parent(in), parent,
+-		br_nf_forward_finish);
+-
++	//NF_HOOK(pf, NF_INET_FORWARD, skb, bridge_parent(in), parent,
++	//	br_nf_forward_finish);
++    br_nf_forward_finish(skb);
+ 	return NF_STOLEN;
+ }
+ 
+ static unsigned int br_nf_forward_arp(unsigned int hook, struct sk_buff *skb,
+ 				      const struct net_device *in,
+ 				      const struct net_device *out,
+ 				      int (*okfn)(struct sk_buff *))

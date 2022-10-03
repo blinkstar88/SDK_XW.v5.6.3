@@ -1,0 +1,168 @@
+--- a/src/rsn_supp/tdls.c
++++ b/src/rsn_supp/tdls.c
+@@ -104,14 +104,15 @@ struct wpa_tdls_peer {
+ 	u8 dtoken;
+ 
+ 	struct tpk {
+ 		u8 kck[16]; /* TPK-KCK */
+ 		u8 tk[16]; /* TPK-TK; assuming only CCMP will be used */
+ 	} tpk;
+ 	int tpk_set;
++	int tk_set; /* TPK-TK configured to the driver */
+ 	int tpk_success;
+ 	int tpk_in_progress;
+ 
+ 	struct tpk_timer {
+ 		u8 dest[ETH_ALEN];
+ 		int count;      /* Retry Count */
+ 		int timer;      /* Timeout in milliseconds */
+@@ -178,14 +179,28 @@ static int wpa_tdls_del_key(struct wpa_s
+ 
+ static int wpa_tdls_set_key(struct wpa_sm *sm, struct wpa_tdls_peer *peer)
+ {
+ 	u8 key_len;
+ 	u8 rsc[6];
+ 	enum wpa_alg alg;
+ 
++	if (peer->tk_set) {
++		/*
++		 * This same TPK-TK has already been configured to the driver
++		 * and this new configuration attempt (likely due to an
++		 * unexpected retransmitted frame) would result in clearing
++		 * the TX/RX sequence number which can break security, so must
++		 * not allow that to happen.
++		 */
++		wpa_printf(MSG_INFO, "TDLS: TPK-TK for the peer " MACSTR
++			   " has already been configured to the driver - do not reconfigure",
++			   MAC2STR(peer->addr));
++		return -1;
++	}
++
+ 	os_memset(rsc, 0, 6);
+ 
+ 	switch (peer->cipher) {
+ 	case WPA_CIPHER_CCMP:
+ 		alg = WPA_ALG_CCMP;
+ 		key_len = 16;
+ 		break;
+@@ -195,20 +210,23 @@ static int wpa_tdls_set_key(struct wpa_s
+ 		return -1;
+ 	default:
+ 		wpa_printf(MSG_WARNING, "TDLS: Unsupported pairwise cipher %d",
+ 			   sm->pairwise_cipher);
+ 		return -1;
+ 	}
+ 
++	wpa_printf(MSG_DEBUG, "TDLS: Configure pairwise key for peer " MACSTR,
++		   MAC2STR(peer->addr));
+ 	if (wpa_sm_set_key(sm, alg, peer->addr, -1, 1,
+ 			   rsc, sizeof(rsc), peer->tpk.tk, key_len) < 0) {
+ 		wpa_printf(MSG_WARNING, "TDLS: Failed to set TPK to the "
+ 			   "driver");
+ 		return -1;
+ 	}
++	peer->tk_set = 1;
+ 	return 0;
+ }
+ 
+ 
+ static int wpa_tdls_send_tpk_msg(struct wpa_sm *sm, const u8 *dst,
+ 				 u8 action_code, u8 dialog_token,
+ 				 u16 status_code, const u8 *buf, size_t len)
+@@ -641,15 +659,17 @@ static void wpa_tdls_peer_free(struct wp
+ 	peer->ext_capab = NULL;
+ 	os_free(peer->supp_channels);
+ 	peer->supp_channels = NULL;
+ 	os_free(peer->supp_oper_classes);
+ 	peer->supp_oper_classes = NULL;
+ 	peer->rsnie_i_len = peer->rsnie_p_len = 0;
+ 	peer->cipher = 0;
+-	peer->tpk_set = peer->tpk_success = 0;
++ 	peer->qos_info = 0;
++ 	peer->wmm_capable = 0;
++	peer->tk_set = peer->tpk_set = peer->tpk_success = 0;
+ 	os_memset(&peer->tpk, 0, sizeof(peer->tpk));
+ 	os_memset(peer->inonce, 0, WPA_NONCE_LEN);
+ 	os_memset(peer->rnonce, 0, WPA_NONCE_LEN);
+ }
+ 
+ 
+ static void wpa_tdls_linkid(struct wpa_sm *sm, struct wpa_tdls_peer *peer,
+@@ -1064,14 +1084,15 @@ skip_rsnie:
+ 	if (os_get_random(peer->inonce, WPA_NONCE_LEN)) {
+ 		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+ 			"TDLS: Failed to get random data for initiator Nonce");
+ 		os_free(rbuf);
+ 		wpa_tdls_peer_free(sm, peer);
+ 		return -1;
+ 	}
++	peer->tk_set = 0; /* A new nonce results in a new TK */
+ 	wpa_hexdump(MSG_DEBUG, "TDLS: Initiator Nonce for TPK handshake",
+ 		    peer->inonce, WPA_NONCE_LEN);
+ 	os_memcpy(ftie->Snonce, peer->inonce, WPA_NONCE_LEN);
+ 
+ 	wpa_hexdump(MSG_DEBUG, "TDLS: FTIE for TPK Handshake M1",
+ 		    (u8 *) ftie, sizeof(struct wpa_tdls_ftie));
+ 
+@@ -1514,14 +1535,27 @@ static int copy_peer_supp_oper_classes(c
+ 	wpa_hexdump(MSG_DEBUG, "TDLS: Peer Supported Operating Classes",
+ 		    (u8 *) peer->supp_oper_classes,
+ 		    peer->supp_oper_classes_len);
+ 	return 0;
+ }
+ 
+ 
++static int tdls_nonce_set(const u8 *nonce)
++{
++	int i;
++
++	for (i = 0; i < WPA_NONCE_LEN; i++) {
++		if (nonce[i])
++			return 1;
++	}
++
++	return 0;
++}
++
++
+ static int wpa_tdls_process_tpk_m1(struct wpa_sm *sm, const u8 *src_addr,
+ 				   const u8 *buf, size_t len)
+ {
+ 	struct wpa_tdls_peer *peer;
+ 	struct wpa_eapol_ie_parse kde;
+ 	struct wpa_ie_data ie;
+ 	int cipher;
+@@ -1754,15 +1788,16 @@ skip_rsn:
+ 	}
+ 
+ 	ftie = (struct wpa_tdls_ftie *) kde.ftie;
+ 	os_memcpy(peer->rsnie_i, kde.rsn_ie, kde.rsn_ie_len);
+ 	peer->rsnie_i_len = kde.rsn_ie_len;
+ 	peer->cipher = cipher;
+ 
+-	if (os_memcmp(peer->inonce, ftie->Snonce, WPA_NONCE_LEN) != 0) {
++	if (os_memcmp(peer->inonce, ftie->Snonce, WPA_NONCE_LEN) != 0 ||
++	    !tdls_nonce_set(peer->inonce)) {
+ 		/*
+ 		 * There is no point in updating the RNonce for every obtained
+ 		 * TPK M1 frame (e.g., retransmission due to timeout) with the
+ 		 * same INonce (SNonce in FTIE). However, if the TPK M1 is
+ 		 * retransmitted with a different INonce, update the RNonce
+ 		 * since this is for a new TDLS session.
+ 		 */
+@@ -1771,14 +1806,15 @@ skip_rsn:
+ 		os_memcpy(peer->inonce, ftie->Snonce, WPA_NONCE_LEN);
+ 		if (os_get_random(peer->rnonce, WPA_NONCE_LEN)) {
+ 			wpa_msg(sm->ctx->ctx, MSG_WARNING,
+ 				"TDLS: Failed to get random data for responder nonce");
+ 			wpa_tdls_peer_free(sm, peer);
+ 			goto error;
+ 		}
++		peer->tk_set = 0; /* A new nonce results in a new TK */
+ 	}
+ 
+ #if 0
+ 	/* get version info from RSNIE received from Peer */
+ 	hdr = (struct rsn_ie_hdr *) kde.rsn_ie;
+ 	rsn_ver = WPA_GET_LE16(hdr->version);
+ 

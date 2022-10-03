@@ -1,0 +1,36 @@
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -7241,15 +7241,15 @@ static int wpa_driver_nl80211_set_freq(s
+ 		   freq->bandwidth, freq->center_freq1, freq->center_freq2);
+ 	msg = nlmsg_alloc();
+ 	if (!msg)
+ 		return -1;
+ 
+ 	nl80211_cmd(drv, msg, 0, NL80211_CMD_SET_WIPHY);
+ 
+-	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, drv->ifindex);
++	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, bss->ifindex);
+ 	if (nl80211_put_freq_params(msg, freq) < 0)
+ 		goto nla_put_failure;
+ 
+ 	ret = send_and_recv_msgs(drv, msg, NULL, NULL);
+ 	msg = NULL;
+ 	if (ret == 0) {
+ 		bss->freq = freq->freq;
+@@ -11599,15 +11599,15 @@ static int nl80211_switch_channel(void *
+ 		return -EINVAL;
+ 
+ 	msg = nlmsg_alloc();
+ 	if (!msg)
+ 		return -ENOMEM;
+ 
+ 	nl80211_cmd(drv, msg, 0, NL80211_CMD_CHANNEL_SWITCH);
+-	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, drv->ifindex);
++	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, bss->ifindex);
+ 	NLA_PUT_U32(msg, NL80211_ATTR_CH_SWITCH_COUNT, settings->cs_count);
+ 	ret = nl80211_put_freq_params(msg, &settings->freq_params);
+ 	if (ret)
+ 		goto error;
+ 
+ 	if (settings->block_tx)
+ 		NLA_PUT_FLAG(msg, NL80211_ATTR_CH_SWITCH_BLOCK_TX);

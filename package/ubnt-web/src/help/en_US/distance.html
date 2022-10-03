@@ -1,0 +1,27 @@
+<html>
+<h3>Distance</h3>
+<p>
+To specify the distance value in miles (or
+kilometers), use the slider or manually enter the value.
+The signal strength and throughput fall off with range.
+Changing the distance value will change the ACK
+(Acknowledgement) timeout value accordingly.</p>
+<p><b>Auto Adjust</b> We recommend enabling the Auto Adjust
+option. Every time the station receives a data frame, it
+sends an ACK frame to the AP (if transmission errors are
+absent). If the station does not receive an ACK frame
+from the AP within the set timeout, then it re-sends the
+frame. If too many data frames are re-sent (whether the
+ACK timeout is too short or too long), then there is a poor
+connection, and throughput performance drops.
+The device has a new auto-acknowledgement
+timeout algorithm, which dynamically optimizes the
+frame acknowledgement timeout value without user
+intervention. This critical feature is required for stabilizing
+long-distance 802.11n outdoor links.
+If two or more stations are located at considerably
+different distances from the AP they are associated with,
+the distance to the farthest station should be set on the
+AP side.
+</p>
+</html>

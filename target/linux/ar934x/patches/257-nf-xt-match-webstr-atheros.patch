@@ -1,0 +1,22 @@
+--- a/net/netfilter/Kconfig
++++ b/net/netfilter/Kconfig
+@@ -961,12 +961,19 @@ config NETFILTER_XT_MATCH_OSF
+ 	  analyzing incoming TCP SYN packets.
+ 
+ 	  Rules and loading software can be downloaded from
+ 	  http://www.ioremap.net/projects/osf
+ 
+ 	  To compile it as a module, choose M here.  If unsure, say N.
+ 
++config NETFILTER_XT_MATCH_WEBSTR
++        tristate "Webstr match support (EXPERIMENTAL)"
++	depends on NETFILTER_ADVANCED
++	help
++	   This option is used for url filter.	
++	   To compile it as a module, choose M here.  If unsure, say N.
++
+ endif # NETFILTER_XTABLES
+ 
+ endmenu
+ 
+ source "net/netfilter/ipvs/Kconfig"

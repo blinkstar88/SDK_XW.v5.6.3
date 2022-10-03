@@ -1,0 +1,13 @@
+--- a/iwlist.c
++++ b/iwlist.c
+@@ -279,8 +279,8 @@
+       /* Not all IEs that start with 0xdd are WPA. 
+        * So check that the OUI is valid. */
+       if((ielen < 8)
+-	 || ((memcmp(&iebuf[offset], wpa_oui, 3) != 0)
+-	     && (iebuf[offset+3] == 0x01)))
++	 || (memcmp(&iebuf[offset], wpa_oui, 3) != 0)
++	 || (iebuf[offset + 3] != 0x01))
+  	{
+ 	  iw_print_ie_unknown(iebuf, buflen);
+  	  return;

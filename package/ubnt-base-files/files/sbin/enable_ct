@@ -1,0 +1,13 @@
+#!/bin/sh
+if [ $# -gt 0 ]; then
+	rm -f /etc/persistent/ct
+	echo "Disable CT"
+else
+	touch /etc/persistent/ct
+	echo "Enable CT"
+fi
+cfgmtd -w -p /etc/ -f /tmp/running.cfg
+rm -f /etc/ccodes.inc
+rm -f /tmp/.sessions.tdb
+killall lighttpd
+exit

@@ -1,0 +1,23 @@
+--- a/net/netfilter/nf_conntrack_sip.c
++++ b/net/netfilter/nf_conntrack_sip.c
+@@ -42,18 +42,18 @@ module_param(sip_timeout, uint, 0600);
+ MODULE_PARM_DESC(sip_timeout, "timeout for the master SIP session");
+ 
+ static int sip_direct_signalling __read_mostly = 1;
+ module_param(sip_direct_signalling, int, 0600);
+ MODULE_PARM_DESC(sip_direct_signalling, "expect incoming calls from registrar "
+ 					"only (default 1)");
+ 
+-static int sip_direct_media __read_mostly = 1;
++static int sip_direct_media __read_mostly = 0;
+ module_param(sip_direct_media, int, 0600);
+ MODULE_PARM_DESC(sip_direct_media, "Expect Media streams between signalling "
+-				   "endpoints only (default 1)");
++				   "endpoints only (default 0)");
+ 
+ unsigned int (*nf_nat_sip_hook)(struct sk_buff *skb, unsigned int dataoff,
+ 				const char **dptr,
+ 				unsigned int *datalen) __read_mostly;
+ EXPORT_SYMBOL_GPL(nf_nat_sip_hook);
+ 
+ void (*nf_nat_sip_seq_adjust_hook)(struct sk_buff *skb, s16 off) __read_mostly;

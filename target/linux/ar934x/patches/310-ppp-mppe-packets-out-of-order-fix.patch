@@ -1,0 +1,381 @@
+--- a/drivers/net/ppp_generic.c
++++ b/drivers/net/ppp_generic.c
+@@ -131,14 +131,15 @@ struct ppp {
+ 	struct sk_buff_head mrq;	/* MP: receive reconstruction queue */
+ #endif /* CONFIG_PPP_MULTILINK */
+ #ifdef CONFIG_PPP_FILTER
+ 	struct sock_filter *pass_filter;	/* filter for packets to pass */
+ 	struct sock_filter *active_filter;/* filter for pkts to reset idle */
+ 	unsigned pass_len, active_len;
+ #endif /* CONFIG_PPP_FILTER */
++	struct sk_buff	*oo_rx_buf;	/* receved out of order packet buffer */
+ 	struct net	*ppp_net;	/* the net we belong to */
+ };
+ 
+ /*
+  * Bits in flags: SC_NO_TCP_CCID, SC_CCP_OPEN, SC_CCP_UP, SC_LOOP_TRAFFIC,
+  * SC_MULTILINK, SC_MP_SHORTSEQ, SC_MP_XSHORTSEQ, SC_COMP_TCP, SC_REJ_COMP_TCP,
+  * SC_MUST_COMP
+@@ -1210,14 +1211,27 @@ ppp_send_frame(struct ppp *ppp, struct s
+ 			cp[1] = proto;
+ 		}
+ 		break;
+ 
+ 	case PPP_CCP:
+ 		/* peek at outbound CCP frames */
+ 		ppp_ccp_peek(ppp, skb, 0);
++		/*
++		 * When MPPE has been negotiated we don't send
++		 * CCP_RESETACK after receiving CCP_RESETREQ; in fact pppd
++		 * sends such a packet but we silently discard it here
++		 */
++		if (CCP_CODE(skb->data+2) == CCP_RESETACK
++			&& (ppp->xcomp->compress_proto == CI_MPPE))
++		{
++			--ppp->dev->stats.tx_packets;
++			ppp->dev->stats.tx_bytes -= skb->len - 2;
++			kfree_skb(skb);
++			return;
++		}
+ 		break;
+ 	}
+ 
+ 	/* try to do packet compression */
+ 	if ((ppp->xstate & SC_COMP_RUN) && ppp->xc_state
+ 	    && proto != PPP_LCP && proto != PPP_CCP) {
+ 		if (!(ppp->flags & SC_CCP_UP) && (ppp->flags & SC_MUST_COMP)) {
+@@ -1660,24 +1674,34 @@ ppp_receive_error(struct ppp *ppp)
+ }
+ 
+ static void
+ ppp_receive_nonmp_frame(struct ppp *ppp, struct sk_buff *skb)
+ {
+ 	struct sk_buff *ns;
+ 	int proto, len, npi;
++	int retry;
+ 
+ 	/*
+ 	 * Decompress the frame, if compressed.
+ 	 * Note that some decompressors need to see uncompressed frames
+ 	 * that come in as well as compressed frames.
+ 	 */
++	skb->priority = 0; /* misuse skb priority for repeat indication */
++repeat:
+ 	if (ppp->rc_state && (ppp->rstate & SC_DECOMP_RUN)
+ 	    && (ppp->rstate & (SC_DC_FERROR | SC_DC_ERROR)) == 0)
+ 		skb = ppp_decompress_frame(ppp, skb);
+ 
++	if (!skb)
++	{
++		return;
++	}
++	retry = skb->priority;
++	skb->priority = 0;
++
+ 	if (ppp->flags & SC_MUST_COMP && ppp->rstate & SC_DC_FERROR)
+ 		goto err;
+ 
+ 	proto = PPP_PROTO(skb);
+ 	switch (proto) {
+ 	case PPP_VJC_COMP:
+ 		/* decompress VJ compressed packets */
+@@ -1787,34 +1811,51 @@ ppp_receive_nonmp_frame(struct ppp *ppp,
+ 			skb_pull_rcsum(skb, 2);
+ 			skb->dev = ppp->dev;
+ 			skb->protocol = htons(npindex_to_ethertype[npi]);
+ 			skb_reset_mac_header(skb);
+ 			netif_rx(skb);
+ 		}
+ 	}
++	if (retry)
++	{
++		skb = NULL;
++		goto repeat;
++	}
+ 	return;
+ 
+  err:
+ 	kfree_skb(skb);
+ 	ppp_receive_error(ppp);
++	if (retry)
++	{
++		skb = NULL;
++		goto repeat;
++	}
+ }
+ 
+ static struct sk_buff *
+ ppp_decompress_frame(struct ppp *ppp, struct sk_buff *skb)
+ {
+-	int proto = PPP_PROTO(skb);
++	int proto;
+ 	struct sk_buff *ns;
+ 	int len;
+ 
++	if (skb == NULL)
++	{
++		skb = ppp->oo_rx_buf;
++		ppp->oo_rx_buf = NULL;
++	}
++
+ 	/* Until we fix all the decompressor's need to make sure
+ 	 * data portion is linear.
+ 	 */
+ 	if (!pskb_may_pull(skb, skb->len))
+ 		goto err;
+ 
++	proto = PPP_PROTO(skb);
+ 	if (proto == PPP_COMP) {
+ 		int obuff_size;
+ 
+ 		switch(ppp->rcomp->compress_proto) {
+ 		case CI_MPPE:
+ 			obuff_size = ppp->mru + PPP_HDRLEN + 1;
+ 			break;
+@@ -1824,23 +1865,56 @@ ppp_decompress_frame(struct ppp *ppp, st
+ 		}
+ 
+ 		ns = dev_alloc_skb(obuff_size);
+ 		if (!ns) {
+ 			printk(KERN_ERR "ppp_decompress_frame: no memory\n");
+ 			goto err;
+ 		}
++repeat:
+ 		/* the decompressor still expects the A/C bytes in the hdr */
+ 		len = ppp->rcomp->decompress(ppp->rc_state, skb->data - 2,
+ 				skb->len + 2, ns->data, obuff_size);
+ 		if (len < 0) {
+ 			/* Pass the compressed frame to pppd as an
+ 			   error indication. */
+-			if (len == DECOMP_FATALERROR)
+-				ppp->rstate |= SC_DC_FERROR;
++			if (len == DECOMP_DROP)
++			{
++				dev_kfree_skb(skb);
++				skb = NULL;
++			}
++			else if (len == DECOMP_ORDER)
++			{
++				if (ppp->oo_rx_buf)
++				{
++					dev_kfree_skb(ppp->oo_rx_buf);
++				}
++				ppp->oo_rx_buf = skb;
++				skb = NULL;
++			}
++			else if (len == DECOMP_REORDER)
++			{
++				struct sk_buff *tskb = ppp->oo_rx_buf;
++				ppp->oo_rx_buf = skb;
++				skb = tskb;
++				ns->priority = 1; /* misuse for repeating... */
++				goto repeat;
++			}
++			else
++			{
++				if (len == DECOMP_FATALERROR)
++					ppp->rstate |= SC_DC_FERROR;
++				if (ppp->oo_rx_buf)
++				{
++					dev_kfree_skb(ppp->oo_rx_buf);
++					ppp->oo_rx_buf = NULL;
++				}
++			}
+ 			kfree_skb(ns);
++			if (skb == NULL)
++				return NULL;
+ 			goto err;
+ 		}
+ 
+ 		kfree_skb(skb);
+ 		skb = ns;
+ 		skb_put(skb, len);
+ 		skb_pull(skb, 2);	/* pull off the A/C bytes */
+@@ -1852,15 +1926,22 @@ ppp_decompress_frame(struct ppp *ppp, st
+ 			ppp->rcomp->incomp(ppp->rc_state, skb->data - 2,
+ 					   skb->len + 2);
+ 	}
+ 
+ 	return skb;
+ 
+  err:
+-	ppp->rstate |= SC_DC_ERROR;
++	if (ppp->rcomp->compress_proto != CI_MPPE)
++	{
++		/*
++		 * If decompression protocol isn't MPPE, we set
++		 * SC_DC_ERROR flag and wait for CCP_RESETACK
++		 */
++		ppp->rstate |= SC_DC_ERROR;
++	}
+ 	ppp_receive_error(ppp);
+ 	return skb;
+ }
+ 
+ #ifdef CONFIG_PPP_MULTILINK
+ /*
+  * Receive a multilink frame.
+@@ -2375,14 +2456,19 @@ ppp_ccp_peek(struct ppp *ppp, struct sk_
+ 	case CCP_RESETACK:
+ 		/* reset the [de]compressor */
+ 		if ((ppp->flags & SC_CCP_UP) == 0)
+ 			break;
+ 		if (inbound) {
+ 			if (ppp->rc_state && (ppp->rstate & SC_DECOMP_RUN)) {
+ 				ppp->rcomp->decomp_reset(ppp->rc_state);
++				if (ppp->oo_rx_buf)
++				{
++					dev_kfree_skb(ppp->oo_rx_buf);
++					ppp->oo_rx_buf = NULL;
++				}
+ 				ppp->rstate &= ~SC_DC_ERROR;
+ 			}
+ 		} else {
+ 			if (ppp->xc_state && (ppp->xstate & SC_COMP_RUN))
+ 				ppp->xcomp->comp_reset(ppp->xc_state);
+ 		}
+ 		break;
+@@ -2692,14 +2778,19 @@ static void ppp_destroy_interface(struct
+ #endif /* CONFIG_PPP_MULTILINK */
+ #ifdef CONFIG_PPP_FILTER
+ 	kfree(ppp->pass_filter);
+ 	ppp->pass_filter = NULL;
+ 	kfree(ppp->active_filter);
+ 	ppp->active_filter = NULL;
+ #endif /* CONFIG_PPP_FILTER */
++	if (ppp->oo_rx_buf)
++	{
++		dev_kfree_skb(ppp->oo_rx_buf);
++		ppp->oo_rx_buf = NULL;
++	}
+ 
+ 	kfree_skb(ppp->xmit_pending);
+ 
+ 	free_netdev(ppp->dev);
+ }
+ 
+ /*
+--- a/drivers/net/ppp_mppe.c
++++ b/drivers/net/ppp_mppe.c
+@@ -101,14 +101,15 @@ struct ppp_mppe_state {
+ 	unsigned char session_key[MPPE_MAX_KEY_LEN];
+ 	unsigned keylen;	/* key length in bytes             */
+ 	/* NB: 128-bit == 16, 40-bit == 8! */
+ 	/* If we want to support 56-bit,   */
+ 	/* the unit has to change to bits  */
+ 	unsigned char bits;	/* MPPE control bits */
+ 	unsigned ccount;	/* 12-bit coherency count (seqno)  */
++	unsigned oo_ccount;	/* last out of order 12-bit coherency count (seqno)  */
+ 	unsigned stateful;	/* stateful mode flag */
+ 	int discard;		/* stateful mode packet loss flag */
+ 	int sanity_errors;	/* take down LCP if too many */
+ 	int unit;
+ 	int debug;
+ 	struct compstat stats;
+ };
+@@ -317,14 +318,17 @@ mppe_init(void *arg, unsigned char *opti
+ 	/*
+ 	 * Initialize the coherency count.  The initial value is not specified
+ 	 * in RFC 3078, but we can make a reasonable assumption that it will
+ 	 * start at 0.  Setting it to the max here makes the comp/decomp code
+ 	 * do the right thing (determined through experiment).
+ 	 */
+ 	state->ccount = MPPE_CCOUNT_SPACE - 1;
++	/* This is value means that oo_ccount is not set - actually it is used only
++	 * for decompressing */
++	state->oo_ccount = MPPE_CCOUNT_SPACE;
+ 
+ 	/*
+ 	 * Note that even though we have initialized the key table, we don't
+ 	 * set the FLUSHED bit.  This is contrary to RFC 3078, sec. 3.1.
+ 	 */
+ 	state->bits = MPPE_BIT_ENCRYPTED;
+ 
+@@ -461,14 +465,17 @@ mppe_decomp_init(void *arg, unsigned cha
+ }
+ 
+ /*
+  * We received a CCP Reset-Ack.  Just ignore it.
+  */
+ static void mppe_decomp_reset(void *arg)
+ {
++	struct ppp_mppe_state *state = (struct ppp_mppe_state *) arg;
++	/* reset oo_ccount */
++	state->oo_ccount = MPPE_CCOUNT_SPACE;
+ 	/* ARGSUSED */
+ 	return;
+ }
+ 
+ /*
+  * Decompress (decrypt) an MPPE packet.
+  */
+@@ -539,19 +546,46 @@ mppe_decompress(void *arg, unsigned char
+ 			 * Take LCP down if the peer is sending too many bogons.
+ 			 * We don't want to do this for a single or just a few
+ 			 * instances since it could just be due to packet corruption.
+ 			 */
+ 			return DECOMP_FATALERROR;
+ 	}
+ 
++#define CCOUNT_DIFF(_new, _old) \
++	((unsigned)(_new) - (((unsigned)(_old)) % MPPE_CCOUNT_SPACE)) \
++				% MPPE_CCOUNT_SPACE
++#define CCOUNT_BEFORE(_new, _old) \
++	(CCOUNT_DIFF((_new),(_old)) >= (MPPE_CCOUNT_SPACE >> 1))
+ 	/*
+ 	 * Check the coherency count.
+ 	 */
+-
+ 	if (!state->stateful) {
++		int gap = CCOUNT_DIFF(ccount, state->ccount + 1);
++		/* detect past missed ccount */
++		if (CCOUNT_BEFORE(ccount, state->ccount + 1))
++			return DECOMP_DROP;
++		/* has oo_ccount set and packet arrived should go after oo_count */
++		if (state->oo_ccount < MPPE_CCOUNT_SPACE
++				&& !CCOUNT_BEFORE(ccount, state->oo_ccount + 1))
++		{
++			/* we need state->ccount(and key) to be just 1 step behind */
++			state->oo_ccount = (state->oo_ccount - 1) % MPPE_CCOUNT_SPACE;
++			while (state->ccount != state->oo_ccount)
++			{
++				mppe_rekey(state, 0);
++				state->ccount = (state->ccount + 1) % MPPE_CCOUNT_SPACE;
++			}
++			state->oo_ccount = MPPE_CCOUNT_SPACE;
++			return DECOMP_REORDER;
++		}
++		if (gap > 0)
++		{
++			state->oo_ccount = ccount;
++			return DECOMP_ORDER;
++		}
+ 		/* RFC 3078, sec 8.1.  Rekey for every packet. */
+ 		while (state->ccount != ccount) {
+ 			mppe_rekey(state, 0);
+ 			state->ccount = (state->ccount + 1) % MPPE_CCOUNT_SPACE;
+ 		}
+ 	} else {
+ 		/* RFC 3078, sec 8.2. */
+--- a/include/linux/ppp-comp.h
++++ b/include/linux/ppp-comp.h
+@@ -123,14 +123,19 @@ struct compressor {
+  * of an error detected after decompression.  This is to avoid infringing
+  * a patent held by Motorola.
+  * Don't you just lurve software patents.
+  */
+ 
+ #define DECOMP_ERROR		-1	/* error detected before decomp. */
+ #define DECOMP_FATALERROR	-2	/* error detected after decomp. */
++#define DECOMP_ORDER		-3	/* detected out of order. */
++#define DECOMP_REORDER		-4	/* request to repeat previuos out of order
++								   packet. You can repeat the same if previous
++								   out of order packet is already lost */
++#define DECOMP_DROP			-5	/* decompressor decided to drop that frame. */
+ 
+ /*
+  * CCP codes.
+  */
+ 
+ #define CCP_CONFREQ	1
+ #define CCP_CONFACK	2

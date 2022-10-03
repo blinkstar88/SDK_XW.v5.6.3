@@ -1,0 +1,193 @@
+--- a/src/ap/wpa_auth.c
++++ b/src/ap/wpa_auth.c
+@@ -191,16 +191,15 @@ void wpa_auth_vlogger(struct wpa_authent
+ 
+ static void wpa_sta_disconnect(struct wpa_authenticator *wpa_auth,
+ 			       const u8 *addr)
+ {
+ 	if (wpa_auth->cb.disconnect == NULL)
+ 		return;
+ 	wpa_printf(MSG_DEBUG, "wpa_sta_disconnect STA " MACSTR, MAC2STR(addr));
+-	wpa_auth->cb.disconnect(wpa_auth->cb.ctx, addr,
+-				WLAN_REASON_PREV_AUTH_NOT_VALID);
++	wpa_auth->cb.disconnect(wpa_auth->cb.ctx, addr, wpa_auth->reason);
+ }
+ 
+ 
+ static int wpa_use_aes_cmac(struct wpa_state_machine *sm)
+ {
+ 	int ret = 0;
+ #ifdef CONFIG_IEEE80211R
+@@ -984,14 +983,15 @@ continue_processing:
+ 			 * Counter update and the station will be allowed to
+ 			 * continue.
+ 			 */
+ 			wpa_printf(MSG_DEBUG, "WPA: Reject 4-way handshake to "
+ 				   "collect more entropy for random number "
+ 				   "generation");
+ 			random_mark_pool_ready();
++			wpa_auth->reason = WLAN_REASON_AKMP_NOT_VALID;
+ 			wpa_sta_disconnect(wpa_auth, sm->addr);
+ 			return;
+ 		}
+ 		if (wpa_parse_kde_ies((u8 *) (key + 1), key_data_length,
+ 				      &kde) < 0) {
+ 			wpa_auth_vlogger(wpa_auth, sm->addr, LOGGER_INFO,
+ 					 "received EAPOL-Key msg 2/4 with "
+@@ -1017,14 +1017,15 @@ continue_processing:
+ 			if (sm->wpa_ie) {
+ 				wpa_hexdump(MSG_DEBUG, "WPA IE in AssocReq",
+ 					    sm->wpa_ie, sm->wpa_ie_len);
+ 			}
+ 			wpa_hexdump(MSG_DEBUG, "WPA IE in msg 2/4",
+ 				    eapol_key_ie, eapol_key_ie_len);
+ 			/* MLME-DEAUTHENTICATE.request */
++			wpa_auth->reason = WLAN_REASON_IE_IN_4WAY_DIFFERS;
+ 			wpa_sta_disconnect(wpa_auth, sm->addr);
+ 			return;
+ 		}
+ #ifdef CONFIG_IEEE80211R
+ 		if (ft && ft_check_msg_2_of_4(wpa_auth, sm, &kde) < 0) {
+ 			wpa_sta_disconnect(wpa_auth, sm->addr);
+ 			return;
+@@ -1679,14 +1680,15 @@ SM_STATE(WPA_PTK, AUTHENTICATION2)
+ 	 * help in preventing precomputation attacks. Instead of the state
+ 	 * machine definition, use an unpredictable nonce value here to provide
+ 	 * stronger protection against potential precomputation attacks.
+ 	 */
+ 	if (random_get_bytes(sm->ANonce, WPA_NONCE_LEN)) {
+ 		wpa_printf(MSG_ERROR, "WPA: Failed to get random data for "
+ 			   "ANonce.");
++		sm->wpa_auth->reason = WLAN_REASON_UNSPECIFIED;
+ 		sm->Disconnect = TRUE;
+ 		return;
+ 	}
+ 	wpa_hexdump(MSG_DEBUG, "WPA: Assign ANonce", sm->ANonce,
+ 		    WPA_NONCE_LEN);
+ 	/* IEEE 802.11i does not clear TimeoutCtr here, but this is more
+ 	 * logical place than INITIALIZE since AUTHENTICATION2 can be
+@@ -2135,14 +2137,15 @@ SM_STATE(WPA_PTK, PTKINITDONE)
+ 	SM_ENTRY_MA(WPA_PTK, PTKINITDONE, wpa_ptk);
+ 	sm->EAPOLKeyReceived = FALSE;
+ 	if (sm->Pair) {
+ 		enum wpa_alg alg = wpa_cipher_to_alg(sm->pairwise);
+ 		int klen = wpa_cipher_key_len(sm->pairwise);
+ 		if (wpa_auth_set_key(sm->wpa_auth, 0, alg, sm->addr, 0,
+ 				     sm->PTK.tk1, klen)) {
++			sm->wpa_auth->reason = WLAN_REASON_CIPHER_SUITE_REJECTED;
+ 			wpa_sta_disconnect(sm->wpa_auth, sm->addr);
+ 			return;
+ 		}
+ 		/* FIX: MLME-SetProtection.Request(TA, Tx_Rx) */
+ 		sm->pairwise_set = TRUE;
+ 
+ 		if (sm->wpa_auth->conf.wpa_ptk_rekey) {
+@@ -2229,38 +2232,41 @@ SM_STEP(WPA_PTK)
+ 		if (wpa_auth_get_eapol(sm->wpa_auth, sm->addr,
+ 				       WPA_EAPOL_keyAvailable) > 0)
+ 			SM_ENTER(WPA_PTK, PTKSTART);
+ 		else {
+ 			wpa_auth->dot11RSNA4WayHandshakeFailures++;
+ 			wpa_auth_logger(sm->wpa_auth, sm->addr, LOGGER_INFO,
+ 					"INITPMK - keyAvailable = false");
++			wpa_auth->reason = WLAN_REASON_IEEE_802_1X_AUTH_FAILED;
+ 			SM_ENTER(WPA_PTK, DISCONNECT);
+ 		}
+ 		break;
+ 	case WPA_PTK_INITPSK:
+ 		if (wpa_auth_get_psk(sm->wpa_auth, sm->addr, sm->p2p_dev_addr,
+ 				     NULL))
+ 			SM_ENTER(WPA_PTK, PTKSTART);
+ 		else {
+ 			wpa_auth_logger(sm->wpa_auth, sm->addr, LOGGER_INFO,
+ 					"no PSK configured for the STA");
+ 			wpa_auth->dot11RSNA4WayHandshakeFailures++;
++			wpa_auth->reason = WLAN_REASON_PAIRWISE_CIPHER_NOT_VALID;
+ 			SM_ENTER(WPA_PTK, DISCONNECT);
+ 		}
+ 		break;
+ 	case WPA_PTK_PTKSTART:
+ 		if (sm->EAPOLKeyReceived && !sm->EAPOLKeyRequest &&
+ 		    sm->EAPOLKeyPairwise)
+ 			SM_ENTER(WPA_PTK, PTKCALCNEGOTIATING);
+ 		else if (sm->TimeoutCtr >
+ 			 (int) dot11RSNAConfigPairwiseUpdateCount) {
+ 			wpa_auth->dot11RSNA4WayHandshakeFailures++;
+ 			wpa_auth_vlogger(sm->wpa_auth, sm->addr, LOGGER_DEBUG,
+ 					 "PTKSTART: Retry limit %d reached",
+ 					 dot11RSNAConfigPairwiseUpdateCount);
++			wpa_auth->reason = WLAN_REASON_4WAY_HANDSHAKE_TIMEOUT;
+ 			SM_ENTER(WPA_PTK, DISCONNECT);
+ 		} else if (sm->TimeoutEvt)
+ 			SM_ENTER(WPA_PTK, PTKSTART);
+ 		break;
+ 	case WPA_PTK_PTKCALCNEGOTIATING:
+ 		if (sm->MICVerified)
+ 			SM_ENTER(WPA_PTK, PTKCALCNEGOTIATING2);
+@@ -2282,14 +2288,15 @@ SM_STEP(WPA_PTK)
+ 		else if (sm->TimeoutCtr >
+ 			 (int) dot11RSNAConfigPairwiseUpdateCount) {
+ 			wpa_auth->dot11RSNA4WayHandshakeFailures++;
+ 			wpa_auth_vlogger(sm->wpa_auth, sm->addr, LOGGER_DEBUG,
+ 					 "PTKINITNEGOTIATING: Retry limit %d "
+ 					 "reached",
+ 					 dot11RSNAConfigPairwiseUpdateCount);
++			wpa_auth->reason = WLAN_REASON_4WAY_HANDSHAKE_TIMEOUT;
+ 			SM_ENTER(WPA_PTK, DISCONNECT);
+ 		} else if (sm->TimeoutEvt)
+ 			SM_ENTER(WPA_PTK, PTKINITNEGOTIATING);
+ 		break;
+ 	case WPA_PTK_PTKINITDONE:
+ 		break;
+ 	}
+@@ -2391,14 +2398,15 @@ SM_STATE(WPA_PTK_GROUP, REKEYESTABLISHED
+ 
+ SM_STATE(WPA_PTK_GROUP, KEYERROR)
+ {
+ 	SM_ENTRY_MA(WPA_PTK_GROUP, KEYERROR, wpa_ptk_group);
+ 	if (sm->GUpdateStationKeys)
+ 		sm->group->GKeyDoneStations--;
+ 	sm->GUpdateStationKeys = FALSE;
++	sm->wpa_auth->reason = WLAN_REASON_GROUP_KEY_UPDATE_TIMEOUT;
+ 	sm->Disconnect = TRUE;
+ }
+ 
+ 
+ SM_STEP(WPA_PTK_GROUP)
+ {
+ 	if (sm->Init || sm->PtkGroupInit) {
+@@ -2659,14 +2667,15 @@ static int wpa_group_config_group_keys(s
+ 
+ static int wpa_group_disconnect_cb(struct wpa_state_machine *sm, void *ctx)
+ {
+ 	if (sm->group == ctx) {
+ 		wpa_printf(MSG_DEBUG, "WPA: Mark STA " MACSTR
+ 			   " for discconnection due to fatal failure",
+ 			   MAC2STR(sm->addr));
++		sm->wpa_auth->reason = WLAN_REASON_GROUP_CIPHER_NOT_VALID;
+ 		sm->Disconnect = TRUE;
+ 	}
+ 
+ 	return 0;
+ }
+ 
+ 
+--- a/src/ap/wpa_auth_i.h
++++ b/src/ap/wpa_auth_i.h
+@@ -186,14 +186,16 @@ struct wpa_authenticator {
+ 	size_t wpa_ie_len;
+ 
+ 	u8 addr[ETH_ALEN];
+ 
+ 	struct rsn_pmksa_cache *pmksa;
+ 	struct wpa_ft_pmk_cache *ft_pmk_cache;
+ 
++	u16 reason;
++
+ #ifdef CONFIG_P2P
+ 	struct bitfield *ip_pool;
+ #endif /* CONFIG_P2P */
+ };
+ 
+ 
+ int wpa_write_rsn_ie(struct wpa_auth_config *conf, u8 *buf, size_t len,

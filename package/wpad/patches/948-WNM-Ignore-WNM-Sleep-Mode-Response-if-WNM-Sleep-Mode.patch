@@ -1,0 +1,119 @@
+--- a/wpa_supplicant/ctrl_iface.c
++++ b/wpa_supplicant/ctrl_iface.c
+@@ -5439,26 +5439,27 @@ static void wpa_supplicant_ctrl_iface_fl
+ 	wpa_s->disallow_aps_bssid_count = 0;
+ 	os_free(wpa_s->disallow_aps_ssid);
+ 	wpa_s->disallow_aps_ssid = NULL;
+ 	wpa_s->disallow_aps_ssid_count = 0;
+ 
+ 	wpa_s->set_sta_uapsd = 0;
+ 	wpa_s->sta_uapsd = 0;
++        wpa_s->wnmsleep_used = 0;
+ 
+ 	wpa_drv_radio_disable(wpa_s, 0);
+ 
+ 	wpa_bss_flush(wpa_s);
+ 	wpa_blacklist_clear(wpa_s);
+ 	wpa_s->extra_blacklist_count = 0;
+ 	wpa_supplicant_ctrl_iface_remove_network(wpa_s, "all");
+ 	wpa_supplicant_ctrl_iface_remove_cred(wpa_s, "all");
+ 	wpa_config_flush_blobs(wpa_s->conf);
+ 	wpa_s->conf->auto_interworking = 0;
+ 	wpa_s->conf->okc = 0;
+-	wpa_s->conf->pmf = 0;
++        wpa_s->conf->pmf = 0;
+ 
+ 	wpa_sm_set_param(wpa_s->wpa, RSNA_PMK_LIFETIME, 43200);
+ 	wpa_sm_set_param(wpa_s->wpa, RSNA_PMK_REAUTH_THRESHOLD, 70);
+ 	wpa_sm_set_param(wpa_s->wpa, RSNA_SA_TIMEOUT, 60);
+ 	eapol_sm_notify_logoff(wpa_s->eapol, FALSE);
+ 
+ 	radio_remove_unstarted_work(wpa_s, NULL);
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -213,14 +213,16 @@ void wpa_supplicant_mark_disassoc(struct
+ 	eapol_sm_notify_portValid(wpa_s->eapol, FALSE);
+ 	if (wpa_key_mgmt_wpa_psk(wpa_s->key_mgmt))
+ 		eapol_sm_notify_eap_success(wpa_s->eapol, FALSE);
+ 	wpa_s->ap_ies_from_associnfo = 0;
+ 	wpa_s->current_ssid = NULL;
+ 	eapol_sm_notify_config(wpa_s->eapol, NULL, NULL);
+ 	wpa_s->key_mgmt = 0;
++
++	wpa_s->wnmsleep_used = 0;
+ }
+ 
+ 
+ static void wpa_find_assoc_pmkid(struct wpa_supplicant *wpa_s)
+ {
+ 	struct wpa_ie_data ie;
+ 	int pmksa_set = -1;
+--- a/wpa_supplicant/wnm_sta.c
++++ b/wpa_supplicant/wnm_sta.c
+@@ -131,14 +131,16 @@ int ieee802_11_send_wnmsleep_req(struct
+ 
+ 	res = wpa_drv_send_action(wpa_s, wpa_s->assoc_freq, 0, wpa_s->bssid,
+ 				  wpa_s->own_addr, wpa_s->bssid,
+ 				  &mgmt->u.action.category, len, 0);
+ 	if (res < 0)
+ 		wpa_printf(MSG_DEBUG, "Failed to send WNM-Sleep Request "
+ 			   "(action=%d, intval=%d)", action, intval);
++	else
++		wpa_s->wnmsleep_used = 1;
+ 
+ 	os_free(wnmsleep_ie);
+ 	os_free(wnmtfs_ie);
+ 	os_free(mgmt);
+ 
+ 	return res;
+ }
+@@ -240,20 +242,30 @@ static void ieee802_11_rx_wnmsleep_resp(
+ 					const u8 *frm, int len)
+ {
+ 	/*
+ 	 * Action [1] | Diaglog Token [1] | Key Data Len [2] | Key Data |
+ 	 * WNM-Sleep Mode IE | TFS Response IE
+ 	 */
+ 	u8 *pos = (u8 *) frm; /* point to payload after the action field */
+-	u16 key_len_total = le_to_host16(*((u16 *)(frm+2)));
++	u16 key_len_total = 0;
+ 	struct wnm_sleep_element *wnmsleep_ie = NULL;
+ 	/* multiple TFS Resp IE (assuming consecutive) */
+ 	u8 *tfsresp_ie_start = NULL;
+ 	u8 *tfsresp_ie_end = NULL;
+ 
++	if (!wpa_s->wnmsleep_used) {
++		wpa_printf(MSG_DEBUG,
++			   "WNM: Ignore WNM-Sleep Mode Response frame since WNM-Sleep Mode has not been used in this association");
++		return;
++	}
++
++ 	if (len < 3)
++ 		return;
++        key_len_total = le_to_host16(*((u16 *)(frm+2)));
++
+ 	wpa_printf(MSG_DEBUG, "WNM-Sleep Mode Response token=%u key_len_total=%d",
+ 		   frm[0], key_len_total);
+ 	pos += 3 + key_len_total;
+ 	if (pos > frm + len) {
+ 		wpa_printf(MSG_INFO, "WNM: Too short frame for Key Data field");
+ 		return;
+ 	}
+--- a/wpa_supplicant/wpa_supplicant_i.h
++++ b/wpa_supplicant/wpa_supplicant_i.h
+@@ -577,14 +577,15 @@ struct wpa_supplicant {
+ 	int blacklist_cleared;
+ 
+ 	struct wpabuf *pending_eapol_rx;
+ 	struct os_reltime pending_eapol_rx_time;
+ 	u8 pending_eapol_rx_src[ETH_ALEN];
+ 	unsigned int last_eapol_matches_bssid:1;
+ 	unsigned int eap_expected_failure:1;
++        unsigned int wnmsleep_used:1;
+ 
+ 	struct ibss_rsn *ibss_rsn;
+ 
+ 	int set_sta_uapsd;
+ 	int sta_uapsd;
+ 	int set_ap_uapsd;
+ 	int ap_uapsd;

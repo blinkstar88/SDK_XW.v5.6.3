@@ -1,0 +1,369 @@
+#!/bin/sh
+
+#
+# Load the settings
+#
+. /etc/airview.conf
+
+AIRVIEW_SHUTDOWN_MARKER=/tmp/airview_shutdown
+UBNT_POLL_SA_START=/proc/sys/dev/ubnt_poll/sa_start
+
+#
+# Make sure console is alive
+#
+if [ "${AIRVIEW_OUTPUT}" = "console" ] || [ "${AIRVIEW_OUTPUT}" = "both" ] ; then
+    echo 9 >/proc/sys/kernel/printk
+fi;
+
+
+#
+# Determine which driver version is used
+#
+UMAC_DRV=`find /lib/modules/ -name umac.ko` 
+ATHEROS_DRIVER_VERSION_9=0
+if [ ! -z $UMAC_DRV ]; then
+  ATHEROS_DRIVER_VERSION_9=1
+fi
+
+#
+# Prefixed output
+#
+output() {
+	echo "airview[$$]: $@"
+}
+
+#
+# Debugging output
+#
+debug() {
+	if [ -n "${DEBUG_AIRVIEW_SCRIPT}" ] && [ "${DEBUG_AIRVIEW_SCRIPT}" -eq 1 ]; then
+		output "$@"
+	fi;
+}
+
+#
+# Command tracing
+#
+trace() {
+	debug "$@"
+	$@
+	return $?
+}
+
+#
+# Allow for override of this script and force syslogd during debugging
+#
+if [ ! "$(realpath ${0})" = "/var/etc/persistent/airview" ] && [ -e "/var/etc/persistent/airview" ]; then
+	if ! ps | grep -q sy[s]logd; then
+        	syslogd -S
+	fi;
+	debug "Delegating to debug version of airview"
+	trace /var/etc/persistent/airview $@
+	exit $?
+fi;
+
+#
+# Validate settings
+#
+if [ ! -e /etc/airview.conf ]; then
+	debug "AirView is not enabled/configured.\n" 
+	exit 1;
+fi;
+
+cleanup() {
+	[ -e "${AIRVIEW_SHUTDOWN_MARKER}" ] || [ -e /tmp/airview ] && trace garp
+	trace rm -f "${AIRVIEW_SHUTDOWN_MARKER}"
+	trace rm -rf /tmp/airview
+	trace rmmod ubnt_spectral 1>/dev/null 2>/dev/null
+}
+
+setup() {
+	# cleanup old marker file if present
+	trace cleanup
+	#
+	# Disable daemons
+	#
+	trace sed -r -e "s~^(null::respawn:.*pa_supplicant)~#\1~g;s~^(null::respawn:.*ostapd)~#\1~g;s~^(null::respawn:.*wdog)~#\1~g;s~^(null::respawn:.*wevent)~#\1~g" -i /etc/inittab
+	trace init -q
+	trace killall -q wpa_supplicant hostapd iwevent pwdog
+	sleep 1
+	trace killall -q -INT wpa_supplicant hostapd iwevent pwdog
+
+	#
+	# Stop VAP or else '/usr/etc/init.d/plugin stop radio' crashes
+	#
+	trace ifconfig ${VAP} down
+
+	#
+	# Remove wireless interfaces (including virtual) from all bridges
+	#
+	BRIDGE_INFO="$(ls -l /sys/devices/virtual/net/*/brif/${VAP}* 2>/dev/null)"
+	BRIDGE_DEV="$(echo "${BRIDGE_INFO}" | cut -f 6 -d '/' | sort | uniq)"
+	for dev in ${BRIDGE_DEV}; do
+		BRIDGE_PORT="$(echo "${BRIDGE_INFO}" | grep "net/${dev}/" | cut -f 8 -d '/' | cut -f 1 -d " " | sort | uniq)"
+		for port in ${BRIDGE_PORT}; do
+			trace brctl delif ${dev} ${port}
+		done
+	done
+
+	if [ $ATHEROS_DRIVER_VERSION_9 == 1 ]; then
+		#
+		# Stop radio and ubnt_poll on startup
+		#
+		trace /usr/etc/init.d/plugin stop radio
+
+		#
+		# Insert all radio modules we need
+		#
+		trace insmod ath_hal 1>/dev/null 2>&1 || true
+		trace insmod ath_rate_atheros 1>/dev/null 2>&1 || true
+		trace insmod ath_dev 1>/dev/null 2>&1 || true
+		trace insmod umac 1>/dev/null 2>&1 || true
+
+		#
+		# Re-create a dummy VAP for airview
+		#
+		trace wlanconfig ${VAP} create wlandev ${RADIO} wlanmode ap
+	else
+		#
+		# Unload ubnt_poll on startup
+		#
+		lsmod | grep -q ubnt_poll
+		if [ $? -eq 0 ]; then
+			# Destroy the existing VAP to unload ubnt_poll
+			wlanconfig ${VAP} destroy
+			# Unload ubnt_poll
+			rmmod ubnt_poll
+			# Re-create a dummy VAP for airview
+			wlanconfig ${VAP} create wlandev ${RADIO} wlanmode ap
+		fi;
+	fi
+
+	#
+	# Inform remote systems about ARP changes
+	#
+	trace garp
+
+	#
+	# Fix country code (attempt #1 - for non-frequency-shifted products)
+	# probability of having some crazy exception from polling module, etc.. 
+	# is reduced by changing the country early if possible.
+	#
+	CURRENT_COUNTRY=$(iwpriv ${RADIO} getCountryID | sed -r -e "s/.*getCountryID:(0-9)*/\1/g")
+	if [ ${CURRENT_COUNTRY} -eq 1045 ] || [ ${CURRENT_COUNTRY} -eq 1046 ]; then
+		NEW_COUNTRY="MD";
+	else
+		NEW_COUNTRY="UB";
+	fi;
+
+	trace iwpriv ${RADIO} setCountry $NEW_COUNTRY
+	trace iwpriv ${RADIO} chanbw 0
+	#
+	# Fix frequency shifting
+	#
+	if iwpriv ${RADIO} GetFreqShift &> /dev/null; then	
+		CURRENT_SHIFT="$(iwpriv ${RADIO} GetFreqShift | sed -r -e "s/.*GetFreqShift:(.).*/\1/g")"
+		if [ "${CURRENT_SHIFT}" != "${AIRVIEW_FREQUENCY_SHIFT}" ]; then
+			trace iwpriv ${RADIO} FreqShift ${AIRVIEW_FREQUENCY_SHIFT}
+		fi
+	fi
+	trace iwconfig ${VAP} essid "ubntairview"
+	trace ifconfig ${VAP} up
+	#
+	# Load the module
+	#
+	lsmod | grep -q ubnt_spectral
+	if [ $? -eq 1 ]; then
+		trace insmod ubnt_spectral
+	fi;
+
+	trace iwpriv ${RADIO} setCountry $NEW_COUNTRY
+	return 0;
+}
+
+teardown() {
+	#
+	# Unload module
+	#
+	lsmod | grep -q ubnt_spectral
+	if [ $? -eq 0 ]; then
+		trace rmmod ubnt_spectral
+	fi;
+
+	trace /usr/etc/init.d/plugin stop radio
+	trace rmmod rssi-leds 1>/dev/null 2>&1 || true
+	trace rmmod ubnt_poll 1>/dev/null 2>&1 || true
+	trace rmmod umac 1>/dev/null 2>&1 || true
+	trace rmmod ath_dfs 1>/dev/null 2>&1 || true
+	trace rmmod ath_dev 1>/dev/null 2>&1 || true
+
+	#
+	# Cleanup airview output files
+	#
+	# trace sed -r -e "s~^#(null::respawn:.*pa_supplicant)~\1~g;s~^#(null::respawn:.*ostapd)~\1~g;s~^#(null::respawn:.*wevent)~\1~g" -i /etc/inittab
+	# trace init -q
+	if [ -e "${AIRVIEW_SHUTDOWN_MARKER}" ] && [ "$(cat "${AIRVIEW_SHUTDOWN_MARKER}")" = "softrestart" ]; then
+		debug "Stop was caused by softrestart.  Don't run it again."
+	else
+		debug "Initiating soft restart."
+		trace . /usr/etc/rc.d/rc.softrestart force 2>&1 | sed -r -e "s/^/    SOFTRESTART: /g"
+		debug "Soft restart complete."
+	fi;
+	trace cleanup
+	return 0;
+}
+
+stop() {
+	# If no processes, skip the kill loop
+	status
+	if [ ! $? -eq 0 ]; then
+		debug "Stop exits early...not running."
+		trace cleanup
+		return 0;
+	fi;
+	# set marker
+	if [ -n "${1}" ]; then 
+		echo -n "${1}" >"${AIRVIEW_SHUTDOWN_MARKER}"
+	else
+		echo -n "'airview stop' command" >"${AIRVIEW_SHUTDOWN_MARKER}"
+	fi;
+	#
+	# Now keep sending USR1 signals until airview init script
+	# finishes and gets out of the way.  But do not wait more than
+	# thirty seconds.  It should be done long beore then.
+	#
+	COUNTDOWN=30
+	while [ ${COUNTDOWN} -gt 0 ]; do
+		# If we see airview or spectralserver, send more QUIT signals
+		if ps | grep -q spe[c]tralserver; then
+			trace killall -q -USR1 spectralserver
+			COUNTDOWN="$((COUNTDOWN-1))"
+			sleep 1;
+		else
+			# our work is done here...
+			COUNTDOWN=0
+		fi;
+	done;
+	#
+	# Use the big hammer at the end, just in case...
+	#
+	trace killall -q -KILL spectralserver
+	return 0;
+}
+
+start() {
+	status 
+	if [ $? -eq 0 ]; then
+		if [ -e "${AIRVIEW_SHUTDOWN_MARKER}" ]; then
+			debug "Airview shutdown in progress due to $(cat "${AIRVIEW_SHUTDOWN_MARKER}").  Not starting again."
+		else
+			debug "Airview already running.  Not starting again."
+		fi;
+	else
+	    if [ "${AIRVIEW_OUTPUT}" = "console" ]; then
+		trace airview service </dev/null >/dev/console 2>&1 &
+	    elif [ "${AIRVIEW_OUTPUT}" = "logger" ]; then
+		trace airview service </dev/null | logger ${AIRVIEW_LOGGER_ARGS} 2>&1 &
+	    elif [ "${AIRVIEW_OUTPUT}" = "both" ]; then
+		trace airview service </dev/null | logger -s ${AIRVIEW_LOGGER_ARGS} >/dev/console 2>&1 &
+	    else
+		trace airview service </dev/null &
+	    fi;
+	fi;
+}
+
+service() {
+	trace setup
+	# Restart server forever or until we get INT signal leading to return code 0 from the process
+	local RET=42
+	while 	[ ! -e "${AIRVIEW_SHUTDOWN_MARKER}" ]; do
+		debug "AirView started as: spectralserver ${AIRVIEW_ARGS}"
+		trace spectralserver ${AIRVIEW_ARGS} 
+		RET=$?
+		debug "AirView return code is ${RET}"
+		if [ -e "${AIRVIEW_SHUTDOWN_MARKER}" ]; then
+			debug "AirView is being shutdown due to $(cat "${AIRVIEW_SHUTDOWN_MARKER}")."
+		elif [ ${RET} -eq 0 ]; then
+			trace echo "inactivity" >"${AIRVIEW_SHUTDOWN_MARKER}"
+			debug "AirView is being shutdown due to $(cat "${AIRVIEW_SHUTDOWN_MARKER}")."
+		else
+			debug "AirView crashed and will restart."
+		fi;
+	done;
+	trace teardown
+	return ${RET}
+}
+
+status() {
+	if ps -w | grep -q "ai[r]view service"; then
+		if [ -e "${AIRVIEW_SHUTDOWN_MARKER}" ]; then
+			debug "Airview is shutting down due to $(cat "${AIRVIEW_SHUTDOWN_MARKER}")."
+		else
+			debug "AirView is running."
+		fi;
+		return 0
+	else
+		debug "AirView is not running."
+		trace cleanup
+		return 1
+	fi;
+}
+
+do_cmd() {
+	local CMD="${1}"
+	local RET=0
+	CMD_STR="$@"
+	shift
+	trace ${CMD} $@
+	RET=$?
+	debug "do_cmd '${CMD_STR}' returns ${RET}."
+	return ${RET}
+}
+
+main() {
+	# Invoke the command from first argument
+	if [ -n "${1}" ]; then
+		CMD="${1}"
+		shift
+		case "${CMD}" in
+		stop)
+			do_cmd "stop" "'airview stop' command"
+			return $?
+			;;
+		web_start)
+			do_cmd "start" "web"
+			return $?
+			;;
+		start)
+			do_cmd "${CMD}"
+			return $?
+			;;
+		softrestart_stop)
+			do_cmd "stop" "softrestart"
+			return $?
+			;;
+		softrestart_start)
+			# do_cmd "start" "softrestart"
+			true
+			return $?
+			;;
+		service)
+			do_cmd "${CMD}"
+			return $?
+			;;
+		status)
+			do_cmd "${CMD}"
+			return $?
+			;;
+		*)
+			output "Unrecognized command: ${CMD}!"
+			# Fallthrough
+			;;
+		esac
+	fi;
+	output "Usage: $(basename ${0}) <start|stop|status>"
+	return 1
+}
+
+main $@
+exit $?

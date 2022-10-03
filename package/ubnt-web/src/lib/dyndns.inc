@@ -1,0 +1,17 @@
+<option value="dyndns.org">dyndns.org</option>
+<option value="changeip.com">changeip.com</option>
+<option value="zoneedit.com">zoneedit.com</option>
+<option value="free.editdns.net">free.editdns.net</option>
+<option value="no-ip.com">no-ip.com</option>
+<option value="noip.com">noip.com</option>
+<option value="freedns.afraid.org">freedns.afraid.org</option>
+<option value="dnsmax.com">dnsmax.com</option>
+<option value="thatip.com">thatip.com</option>
+<option value="he.net">he.net</option>
+<option value="dnsdynamic.org">dnsdynamic.org</option>
+<option value="dnsexit.com">dnsexit.com</option>
+<option value="ovh.com">ovh.com</option>
+<option value="dnsomatic.com">dnsomatic.com</option>
+<option value="3322.org">3322.org</option>
+<option value="namecheap.com">namecheap.com</option>
+<option value="easydns.com">easydns.com</option>

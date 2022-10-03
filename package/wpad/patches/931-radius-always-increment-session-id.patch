@@ -1,0 +1,18 @@
+--- a/src/drivers/driver_wextap.c
++++ b/src/drivers/driver_wextap.c
+@@ -865,14 +865,15 @@ wextap_new_sta(struct wextap_driver_data
+ 
+ 	hostapd_logger(hapd, addr, HOSTAPD_MODULE_IEEE80211,
+ 			HOSTAPD_LEVEL_INFO, "associated");
+ 
+ 	sta = ap_get_sta(hapd, addr);
+ 	if (sta) {
+ 		accounting_sta_stop(hapd, sta);
++		accounting_sta_get_id(hapd, sta);
+ 	} else {
+ 		sta = ap_sta_add(hapd, addr);
+ 		if (sta == NULL)
+ 			return -1;
+ 	}
+ 
+ 	if (memcmp(addr, drv->acct_mac, ETH_ALEN) == 0) {

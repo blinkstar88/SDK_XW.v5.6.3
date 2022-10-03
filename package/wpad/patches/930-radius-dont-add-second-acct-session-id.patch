@@ -1,0 +1,36 @@
+--- a/src/ap/ieee802_1x.c
++++ b/src/ap/ieee802_1x.c
+@@ -306,14 +306,16 @@ static void ieee802_1x_learn_identity(st
+ 
+ static int add_common_radius_sta_attr(struct hostapd_data *hapd,
+ 				      struct hostapd_radius_attr *req_attr,
+ 				      struct sta_info *sta,
+ 				      struct radius_msg *msg)
+ {
+ 	char buf[128];
++	size_t tlen;
++	u8 *tbuf;
+ 
+ 	if (!hostapd_config_get_radius_attr(req_attr,
+ 					    RADIUS_ATTR_NAS_PORT) &&
+ 	    !radius_msg_add_attr_int32(msg, RADIUS_ATTR_NAS_PORT, sta->aid)) {
+ 		wpa_printf(MSG_ERROR, "Could not add NAS-Port");
+ 		return -1;
+ 	}
+@@ -341,15 +343,15 @@ static int add_common_radius_sta_attr(st
+ 					    RADIUS_ATTR_CONNECT_INFO) &&
+ 	    !radius_msg_add_attr(msg, RADIUS_ATTR_CONNECT_INFO,
+ 				 (u8 *) buf, os_strlen(buf))) {
+ 		wpa_printf(MSG_ERROR, "Could not add Connect-Info");
+ 		return -1;
+ 	}
+ 
+-	if (sta->acct_session_id_hi || sta->acct_session_id_lo) {
++	if ((sta->acct_session_id_hi || sta->acct_session_id_lo) && radius_msg_get_attr_ptr(msg, RADIUS_ATTR_ACCT_SESSION_ID, &tbuf, &tlen, NULL)) {
+ 		os_snprintf(buf, sizeof(buf), "%08X-%08X",
+ 			    sta->acct_session_id_hi, sta->acct_session_id_lo);
+ 		if (!radius_msg_add_attr(msg, RADIUS_ATTR_ACCT_SESSION_ID,
+ 					 (u8 *) buf, os_strlen(buf))) {
+ 			wpa_printf(MSG_ERROR, "Could not add Acct-Session-Id");
+ 			return -1;
+ 		}

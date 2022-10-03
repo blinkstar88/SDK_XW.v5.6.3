@@ -1,0 +1,17 @@
+Index: linux-2.6.32.54/net/netfilter/nf_conntrack_sip.c
+===================================================================
+--- linux-2.6.32.54.orig/net/netfilter/nf_conntrack_sip.c	2012-06-05 18:54:09.633130542 +0300
++++ linux-2.6.32.54/net/netfilter/nf_conntrack_sip.c	2012-06-05 18:54:34.373129439 +0300
+@@ -46,10 +46,10 @@
+ MODULE_PARM_DESC(sip_direct_signalling, "expect incoming calls from registrar "
+ 					"only (default 1)");
+ 
+-static int sip_direct_media __read_mostly = 1;
++static int sip_direct_media __read_mostly = 0;
+ module_param(sip_direct_media, int, 0600);
+ MODULE_PARM_DESC(sip_direct_media, "Expect Media streams between signalling "
+-				   "endpoints only (default 1)");
++				   "endpoints only (default 0)");
+ 
+ unsigned int (*nf_nat_sip_hook)(struct sk_buff *skb, unsigned int dataoff,
+ 				const char **dptr,

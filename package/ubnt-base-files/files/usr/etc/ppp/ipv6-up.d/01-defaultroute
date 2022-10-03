@@ -1,0 +1,10 @@
+#!/bin/sh
+
+gw=$5
+dev=$1
+
+include /lib/network     # include /lib/network/*.sh
+scan_interfaces          # read and parse the network config
+
+route -A inet6 add default gw ${gw} dev ${dev}
+

@@ -1,0 +1,29 @@
+--- a/iwlist.c
++++ b/iwlist.c
+@@ -869,7 +869,11 @@
+ 	printf(":%02X", buffer[i]);
+       printf("]\n");
+ #endif
+-      printf("%-8.16s  Scan completed :\n", ifname);
++    if(scanflags == IW_SCAN_HACK) {
++      printf("%-8.16s  Scan %s :\n", ifname, ((wrq.u.data.flags & 0x8000) ? "in progress" : "stopped" ));
++    } else {
++        printf("%-8.16s  Scan completed :\n", ifname);
++    }
+       iw_init_event_stream(&stream, (char *) buffer, wrq.u.data.length);
+       do
+ 	{
+@@ -884,7 +884,12 @@
+       printf("\n");
+     }
+   else
+-    printf("%-8.16s  No scan results\n\n", ifname);
++    if(scanflags == IW_SCAN_HACK) {
++        printf("%-8.16s  Scan %s :\n", ifname, ((wrq.u.data.flags & 0x8000) ? "in progress" : "stopped" ));
++        printf("%-8.16s  No scan results\n\n", ifname);
++    } else {
++        printf("%-8.16s  No scan results\n\n", ifname);
++    }
+ 
+   free(buffer);
+   return(0);

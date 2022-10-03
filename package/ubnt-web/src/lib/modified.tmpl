@@ -1,0 +1,257 @@
+<?
+include("lib/ipcheck.inc");
+$test_time_left = is_test();
+$testmode_active = is_testmode_active();
+if (!is_config_changed() && !$test_time_left) {
+	exec("chmod 644 $cfg_file");
+?>
+<div id="message">
+	<div class="msg info-msg round-corner">
+		<table class="msg">
+			<tr>
+				<td id="msg_body"><? echo dict_translate("Nothing to apply. No configuration changes were done."); ?></td>
+			</tr>
+		</table>
+	</div>
+</div>
+<? } else { ?>
+<div id="message">
+<link href="FULL_VERSION_LINK/jquery-ui.css" rel="stylesheet" type="text/css">
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.ui.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.utils.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.blockUI.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/pstrength.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.passwd.js"></script>
+<script type="text/javascript" language="javascript">
+//<!--
+
+var testmode = '<? if (is_test() != 0) { echo "on"; } >';
+var restart_time = 0;
+var poll_time = 2000;
+var sr_time = <? echo $soft_reboot_time + $sr_delay; >;
+var reboot_time = <? echo $reboot_time; >;
+var testmode_start = <? echo $testmode_active; >;
+var testtime_left = <? echo $test_time_left >;
+var cp_dialog = $('<div/>');
+
+function do_redirect(url) {
+	$.blockUI({ message: "<h3>Applying changes, please wait...</h3>"});
+	$("#message").hide();
+	setTimeout(function() { window.location.href = url; }, sr_time * 1000);
+}
+
+function page_redirect() {
+       	var http_proto = '<? echo $ipc_http_proto;>';
+       	var http_port = '<? echo $ipc_http_port;>';
+       	var iplan = '<?echo $ipc_lanipaddress>';
+       	var ip = '<?echo $ipc_ipaddress>';
+       	var uri = parseUri(window.location.href);
+
+       	if (http_proto != '')
+       		uri['protocol'] = http_proto;
+       	if (http_port != '')
+       		uri['port'] = http_port;
+       	if (uri['host'] != iplan && uri['host'] != ip) {
+       		if (ip != '' && ip != '0.0.0.0' && ip != '0')
+       			uri['host'] = ip;
+       	}
+       	var url = uri['protocol']+'://'+uri['host'];
+       	if (uri['port'] != '')
+       		url = url + ':' + uri['port'];
+       	url = url + uri['relative'];
+
+	if (url == window.location.href)
+		page_reload();
+	else
+		do_redirect(url);
+}
+
+function page_reload() {
+        window.location.href = window.location.href + '?' + (new Date().getTime());
+}
+
+function handle_click(event) {
+	if (event.data.url == 'apply.cgi' && $.cookie('force_password_change') == "true"){
+		open_passwd_change_dlg();
+	}
+	else{
+		$('.cfg_btn').disable();
+		$.ajax({
+			url: event.data.url,
+			cache: false,
+			data: { testmode: event.data.testmode },
+			success: event.data.fn,
+			error: event.data.fn
+		});
+	}
+}
+
+var tTimer = null;
+function update_test_counter() {
+	if (testtime_left > 1) {
+		testtime_left--;
+		$('#testmsg').text(testtime_left);
+	} else {
+		clearInterval(tTimer);
+		$('#msg_body').text("Reverting to previous settings...");
+		$('.cfg_btn').disable();
+		setTimeout(function() {
+				$('#message').hide();
+				page_redirect();
+			}, 1000 * reboot_time);
+	}
+}
+
+function restart_poll() {
+	if (poll_time < restart_time) {
+		poll_time += 1000;
+		do_poll();
+	}
+	else {
+		$('.cfg_btn').enable();
+	}
+}
+
+function do_poll() {
+	$.ajax({
+		url: 'poll.cgi',
+		cache: false,
+		timeout: 1000,
+		success: function() { $('.cfg_btn').enable(); },
+		error: restart_poll
+	});
+}
+
+var processJSON = function(dlg) {
+	return function(json, textStatus, jqXHR) {
+		if (json.rc == 0){
+			if(typeof g_cfg !== 'undefined'){
+				g_cfg.updateRootPassword(json.message);
+			}
+			dlg.dialog("close");
+		}
+		else{
+			$('#error_msg').text(json.message);
+			$('#errortbl_dlg').show();
+		}
+	};
+};
+
+function processError(xhr, err, e) {
+	if (xhr && xhr.status != 200 && xhr.status != 0)
+		window.location.reload();
+}
+
+function change_password(dlg) {
+	var data = {};
+	data["OldPassword"] = $('#dlgOldPassword').val();
+	data["NewPassword"] = $('#dlgNewPassword').val(); 
+	data["NewPassword2"] = $('#dlgNewPassword2').val();
+
+	$.ajax({
+		url: 'pass_change.cgi',
+		cache: false,
+		data: data,
+		success: processJSON(dlg),
+		error: processError
+	});
+}
+
+function create_passwd_change_dlg() {
+	cp_dialog.load('FULL_VERSION_LINK/password_change.cgi'+'?'+Math.random()*Math.random());
+	cp_dialog.attr('title', "<? echo dict_translate("Change Password"); >");
+	var y = 280 - $(document).scrollTop();
+	cp_dialog.dialog({
+		autoOpen: false,
+		bgiframe: true,
+		modal : true,
+		height : 290,
+		width: 410,
+		resizable : false,
+		draggable: false,
+		position: ['center', y],
+		buttons: {
+			"<? echo dict_translate("Cancel"); >": function() {
+				$(this).dialog("close");
+				return true;
+			},
+			"<? echo dict_translate("Change"); >": function() {
+				change_password($(this));
+				return true;
+			}
+		}
+	});
+}
+
+function open_passwd_change_dlg(){
+	$('#error_msg').text("");
+	$('#errortbl_dlg').hide();
+	$('#dlgOldPassword').val("");
+	$('#dlgNewPassword').val("");
+	$('#dlgNewPassword2').val("");
+	$('#dlgPasswordVerdict > span').html("");
+	cp_dialog.dialog("open");
+}
+
+function bind_click(id, data) {
+	$(id).bind('click', data, handle_click);
+}
+
+$(document).ready(function() {
+	create_passwd_change_dlg();
+	restart_time = !isNaN(sr_time) ? sr_time * 1000 : 20000;
+
+	var discard_fn = (testmode.length > 0) ? page_redirect : page_reload;
+	bind_click('#test_button', { url: 'apply.cgi', testmode: 'on', fn: page_redirect });
+	bind_click('#apply_button', { url: 'apply.cgi', testmode: '', fn: page_redirect });
+	bind_click('#discard_button', { url: 'discard.cgi', testmode: testmode, fn: discard_fn });
+	
+	if (testmode.length > 0) {
+		$('.cfg_btn').disable();
+		setTimeout(do_poll, poll_time);
+
+		if (testmode_start == 0) {
+			tTimer = setInterval(update_test_counter, 1000);
+		}
+		else {
+			setTimeout(page_reload, 1000 * sr_time);
+		}
+	}
+	else
+		if ($.cookie('force_password_change') == "true") {
+			open_passwd_change_dlg();
+	}
+});
+
+// -->
+</script>
+
+<div id="changedMsgDiv" class="msg info-msg round-corner">
+	<table class="msg">
+		<tr>
+			<td id="msg_body">
+<?
+if (!$test_time_left) {
+	echo dict_translate("msg_cfg_modified|Configuration contains changes. Apply these changes?");
+} else {
+	if ($testmode_active == 0) {
+		echo dict_translate("msg_cfg_testmode|Device is in Test mode. It will resume the last configuration after ");
+		echo "<span id='testmsg'>" + $test_time_left + "</span>" + " " + dict_translate("seconds") + ".";
+		echo " " + dict_translate("Apply these changes?");
+	}
+	else {
+		echo dict_translate("Applying...");
+	}
+} >
+			</td>
+			<td style="white-space: nowrap; text-align: right;">
+				<input type="button" class="cfg_btn" id="test_button" value="<? echo dict_translate("Test"); >">
+				<input type="button" class="cfg_btn" id="apply_button" value="<? echo dict_translate("Apply"); >">
+				<input type="button" class="cfg_btn" id="discard_button" value="<? echo dict_translate("Discard"); >">
+			</td>
+		</tr>
+	</table>
+</div>
+
+</div>
+<? } ?>

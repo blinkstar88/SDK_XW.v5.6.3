@@ -1,0 +1,25 @@
+--- a/drivers/watchdog/Kconfig
++++ b/drivers/watchdog/Kconfig
+@@ -24,14 +24,22 @@ menuconfig WATCHDOG
+ 	  also monitor NFS connections and can reboot the machine when the process
+ 	  table is full.
+ 
+ 	  If unsure, say N.
+ 
+ if WATCHDOG
+ 
++config WATCHDOG_AR7240
++    tristate "Atheros AR7240 Hardware Watchdog support"
++    depends on WATCHDOG
++    help
++      Say Y here to support the hardware watchdog capability on AR7240.
++      The watchdog timeout period is normally one minute but 
++      can be changed with a boot-time parameter.
++
+ config WATCHDOG_NOWAYOUT
+ 	bool "Disable watchdog shutdown on close"
+ 	help
+ 	  The default watchdog behaviour (which you get if you say N here) is
+ 	  to stop the timer if the process managing it closes the file
+ 	  /dev/watchdog. It's always remotely possible that this process might
+ 	  get killed. If you say Y here, the watchdog cannot be stopped once

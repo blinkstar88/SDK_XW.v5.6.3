@@ -1,0 +1,115 @@
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -2095,15 +2095,17 @@ static void wpa_supplicant_event_disasso
+ 	}
+ 
+ 	if (could_be_psk_mismatch(wpa_s, reason_code, locally_generated)) {
+ 		wpa_msg(wpa_s, MSG_INFO, "WPA: 4-Way Handshake failed - "
+ 			"pre-shared key may be incorrect");
+ 		if (wpas_p2p_4way_hs_failed(wpa_s) > 0)
+ 			return; /* P2P group removed */
+-		wpas_auth_failed(wpa_s);
++		/* UBNT: commented out because it disables entire ESS and other APs
++		 * with the same SSID are not even tried */
++		//wpas_auth_failed(wpa_s);
+ 	}
+ 	if (!wpa_s->disconnected &&
+ 	    (!wpa_s->auto_reconnect_disabled ||
+ 	     wpa_s->key_mgmt == WPA_KEY_MGMT_WPS)) {
+ 		wpa_dbg(wpa_s, MSG_DEBUG, "Auto connect enabled: try to "
+ 			"reconnect (wps=%d wpa_state=%d)",
+ 			wpa_s->key_mgmt == WPA_KEY_MGMT_WPS,
+@@ -2213,15 +2215,16 @@ wpa_supplicant_event_michael_mic_failure
+ 		 * to start countermeasures and AP better do the same.
+ 		 */
+ 		wpa_sm_key_request(wpa_s->wpa, 1, pairwise);
+ 
+ 		/* initialize countermeasures */
+ 		wpa_s->countermeasures = 1;
+ 
+-		wpa_blacklist_add(wpa_s, wpa_s->bssid);
++		/* UBNT: commented out because AP is blacklisted in wpas_connection_failed() */
++		//wpa_blacklist_add(wpa_s, wpa_s->bssid);
+ 
+ 		wpa_msg(wpa_s, MSG_WARNING, "TKIP countermeasures started");
+ 
+ 		/*
+ 		 * Need to wait for completion of request frame. We do not get
+ 		 * any callback for the message completion, so just wait a
+ 		 * short while and hope for the best. */
+@@ -2546,15 +2549,19 @@ static void wpas_event_disconnect(struct
+ 	wpa_supplicant_event_disassoc(wpa_s, reason_code, locally_generated);
+ 
+ 	if (((reason_code == WLAN_REASON_IEEE_802_1X_AUTH_FAILED ||
+ 	      ((wpa_key_mgmt_wpa_ieee8021x(wpa_s->key_mgmt) ||
+ 		(wpa_s->key_mgmt & WPA_KEY_MGMT_IEEE8021X_NO_WPA)) &&
+ 	       eapol_sm_failed(wpa_s->eapol))) &&
+ 	     !wpa_s->eap_expected_failure))
+-		wpas_auth_failed(wpa_s);
++	{
++		/* UBNT: commented out because it disables entire ESS and other APs
++		 * with the same SSID are not even tried */
++		//wpas_auth_failed(wpa_s);
++	}
+ 
+ #ifdef CONFIG_P2P
+ 	if (deauth && reason_code > 0) {
+ 		if (wpas_p2p_deauth_notif(wpa_s, addr, reason_code, ie, ie_len,
+ 					  locally_generated) > 0) {
+ 			/*
+ 			 * The interface was removed, so cannot continue
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -223,15 +223,17 @@ static void wpa_supplicant_timeout(void
+ {
+ 	struct wpa_supplicant *wpa_s = eloop_ctx;
+ 	const u8 *bssid = wpa_s->bssid;
+ 	if (is_zero_ether_addr(bssid))
+ 		bssid = wpa_s->pending_bssid;
+ 	wpa_msg(wpa_s, MSG_INFO, "Authentication with " MACSTR " timed out.",
+ 		MAC2STR(bssid));
+-	wpa_blacklist_add(wpa_s, bssid);
++	/* UBNT: commented out because it disables entire ESS and other APs
++	 * with the same SSID are not even tried */
++	//wpa_blacklist_add(wpa_s, bssid);
+ 	wpa_sm_notify_disassoc(wpa_s->wpa);
+ 	wpa_supplicant_deauthenticate(wpa_s, WLAN_REASON_DEAUTH_LEAVING);
+ 	wpa_s->reassociate = 1;
+ 
+ 	/*
+ 	 * If we timed out, the AP or the local radio may be busy.
+ 	 * So, wait a second until scanning again.
+@@ -4178,15 +4180,16 @@ void wpas_connection_failed(struct wpa_s
+ 		 * next. Otherwise, we may as well try this one once more
+ 		 * before allowing other, likely worse, ESSes to be considered.
+ 		 */
+ 		freqs = get_bss_freqs_in_ess(wpa_s);
+ 		if (freqs) {
+ 			wpa_dbg(wpa_s, MSG_DEBUG, "Another BSS in this ESS "
+ 				"has been seen; try it next");
+-			wpa_blacklist_add(wpa_s, bssid);
++			/* UBNT: commented out because it's already blacklisted 13 lines above */
++			//wpa_blacklist_add(wpa_s, bssid);
+ 			/*
+ 			 * On the next scan, go through only the known channels
+ 			 * used in this ESS based on previous scans to speed up
+ 			 * common load balancing use case.
+ 			 */
+ 			os_free(wpa_s->next_scan_freqs);
+ 			wpa_s->next_scan_freqs = freqs;
+@@ -4435,14 +4438,15 @@ void wpas_clear_temp_disabled(struct wpa
+ 			"id=%d ssid=\"%s\"",
+ 			ssid->id, wpa_ssid_txt(ssid->ssid, ssid->ssid_len));
+ 	}
+ 	ssid->disabled_until.sec = 0;
+ 	ssid->disabled_until.usec = 0;
+ 	if (clear_failures)
+ 		ssid->auth_failures = 0;
++	wpa_s->extra_blacklist_count = 0;
+ }
+ 
+ 
+ int disallowed_bssid(struct wpa_supplicant *wpa_s, const u8 *bssid)
+ {
+ 	size_t i;
+ 

@@ -1,0 +1,17 @@
+--- a/net/bridge/br_device.c
++++ b/net/bridge/br_device.c
+@@ -175,13 +175,14 @@ void br_dev_setup(struct net_device *dev
+ 	random_ether_addr(dev->dev_addr);
+ 	ether_setup(dev);
+ 
+ 	dev->netdev_ops = &br_netdev_ops;
+ 	dev->destructor = free_netdev;
+ 	SET_ETHTOOL_OPS(dev, &br_ethtool_ops);
+ 	dev->tx_queue_len = 0;
++	dev->hard_header_len = 64;
+ 	dev->priv_flags = IFF_EBRIDGE;
+ 
+ 	dev->features = NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HIGHDMA |
+ 			NETIF_F_GSO_MASK | NETIF_F_NO_CSUM | NETIF_F_LLTX |
+ 			NETIF_F_NETNS_LOCAL | NETIF_F_GSO;
+ }

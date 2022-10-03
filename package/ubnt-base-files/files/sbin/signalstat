@@ -1,0 +1,40 @@
+#!/bin/sh
+
+if [ "$1" == "" ]
+then
+    SLEEPTIME=1
+else
+    SLEEPTIME=$1
+fi
+
+if [ "$2" == "" ]
+then
+    NUMSTR=2
+else
+    NUMSTR=$2
+fi
+
+CURSOR=""
+
+while
+
+    if [ "${CURSOR}" != "" ]
+    then
+        'echo' -en "\033[${CURSOR}A"
+    fi
+
+    ## number of strings printed
+    CURSOR=$NUMSTR
+    
+    ESTR=$(/usr/www/signal.cgi |awk '/signal|chainrssi"/{print}' |sed -e 's/\"//g' -e 's/://g' -e 's/\[//g' -e 's/\]//g' -e 's/[a-z]//g' -e 's/\ //g');
+    echo $ESTR | awk -v FS=',' '{print("Hpol:" $4 - $3 - 179, "Vpol:" $5 - $3 - 179, "Combined:" $1, "Noise:" $3, "(dbm)")}'
+
+    if [ "${SLEEPTIME}" == "0" ]
+    then
+        break
+    fi
+
+    date
+
+do sleep ${SLEEPTIME}
+done

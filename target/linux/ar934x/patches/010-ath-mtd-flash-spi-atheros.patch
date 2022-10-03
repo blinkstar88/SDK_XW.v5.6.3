@@ -1,0 +1,49 @@
+--- a/drivers/mtd/devices/Kconfig
++++ b/drivers/mtd/devices/Kconfig
+@@ -303,9 +303,26 @@ config MTD_DOCPROBE_55AA
+ 	  continue with probing if it is absent.  The signature will always be
+ 	  present for a DiskOnChip 2000 or a normal DiskOnChip Millennium.
+ 	  Only if you have overwritten the first block of a DiskOnChip
+ 	  Millennium will it be absent.  Enable this option if you are using
+ 	  LinuxBIOS or if you need to recover a DiskOnChip Millennium on which
+ 	  you have managed to wipe the first block.
+ 
++config MTD_AR7240_SPI_FLASH
++	bool "Support for ar7240 spi flash"
++	depends on MTD
++
++config MTD_ATH_FLASH
++	bool "Support for Atheros spi flash"
++	depends on MTD
++
++config MTD_AR7100_SPI_FLASH
++    bool "Support for ar7100 spi flash"
++    depends on MTD
++
++config MTD_AR9100_PARALLEL_FLASH
++    bool "Support for ar9100 parallel flash"
++    depends on MTD
++
++
+ endmenu
+ 
+--- a/drivers/mtd/devices/Makefile
++++ b/drivers/mtd/devices/Makefile
+@@ -12,8 +12,17 @@ obj-$(CONFIG_MTD_PHRAM)		+= phram.o
+ obj-$(CONFIG_MTD_PMC551)	+= pmc551.o
+ obj-$(CONFIG_MTD_MS02NV)	+= ms02-nv.o
+ obj-$(CONFIG_MTD_MTDRAM)	+= mtdram.o
+ obj-$(CONFIG_MTD_LART)		+= lart.o
+ obj-$(CONFIG_MTD_BLOCK2MTD)	+= block2mtd.o
+ obj-$(CONFIG_MTD_DATAFLASH)	+= mtd_dataflash.o
+ obj-$(CONFIG_MTD_M25P80)	+= m25p80.o
++obj-$(CONFIG_MTD_AR7240_SPI_FLASH)	+= ar7240_flash.o
++obj-$(CONFIG_MTD_AR7100_SPI_FLASH)	+= ar7100_flash.o
++ifeq ($(ATH_SST_FLASH), y)
++CFLAGS_ar7240_flash.o += -DATH_SST_FLASH=1
++endif
++obj-$(CONFIG_MTD_ATH_FLASH)	+= ath_flash.o
++ifeq ($(ATH_SST_FLASH), y)
++CFLAGS_ath_flash.o += -DATH_SST_FLASH=1
++endif
+ obj-$(CONFIG_MTD_SST25L)	+= sst25l.o

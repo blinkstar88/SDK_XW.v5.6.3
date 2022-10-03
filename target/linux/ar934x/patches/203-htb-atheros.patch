@@ -1,0 +1,73 @@
+--- a/net/sched/sch_htb.c
++++ b/net/sched/sch_htb.c
+@@ -578,34 +578,70 @@ static int htb_enqueue(struct sk_buff *s
+ 	sch->bstats.packets += skb_is_gso(skb)?skb_shinfo(skb)->gso_segs:1;
+ 	sch->bstats.bytes += qdisc_pkt_len(skb);
+ 	return NET_XMIT_SUCCESS;
+ }
+ 
+ static inline void htb_accnt_tokens(struct htb_class *cl, int bytes, long diff)
+ {
++        long old_cnt = cl->tokens;
+ 	long toks = diff + cl->tokens;
++        if(toks < old_cnt)
++        {
++            /*overflow*/
++            toks = cl->buffer;
++        }
+ 
+ 	if (toks > cl->buffer)
++	{
+ 		toks = cl->buffer;
++	}
++
++	old_cnt = toks;
+ 	toks -= (long) qdisc_l2t(cl->rate, bytes);
++	if(toks > old_cnt)
++	{
++	    /*overflow*/
++	    toks = 1 - cl->mbuffer;
++	}
++
+ 	if (toks <= -cl->mbuffer)
++	{
+ 		toks = 1 - cl->mbuffer;
++	}
+ 
+ 	cl->tokens = toks;
+ }
+ 
+ static inline void htb_accnt_ctokens(struct htb_class *cl, int bytes, long diff)
+ {
++        long old_cnt = cl->ctokens;
+ 	long toks = diff + cl->ctokens;
++        if(toks < old_cnt)
++        {
++            /*overflow*/
++            toks = cl->cbuffer;
++        }
+ 
+ 	if (toks > cl->cbuffer)
++	{
+ 		toks = cl->cbuffer;
++	}
++
++	old_cnt = toks;
+ 	toks -= (long) qdisc_l2t(cl->ceil, bytes);
++        if(toks > old_cnt)
++        {
++            /*overflow*/
++            toks = 1 - cl->mbuffer;
++        }
++
+ 	if (toks <= -cl->mbuffer)
++	{
+ 		toks = 1 - cl->mbuffer;
++	}
+ 
+ 	cl->ctokens = toks;
+ }
+ 
+ /**
+  * htb_charge_class - charges amount "bytes" to leaf and ancestors
+  *

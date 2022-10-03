@@ -1,0 +1,110 @@
+#!/bin/sh
+
+. /lib/ubnt/cl_functions.sh
+
+LOCK_DIR="/tmp/infctld_cl.lock"
+CFG_DEFAULT_FILE="/etc/default.cfg"
+CMD_REBOOT="/sbin/reboot"
+SUP_DIR="/tmp/.cl_support"
+SUP_FILE="/tmp/.supp.bin"
+CMD_BGND="/usr/bin/bgnd"
+
+do_device_reset2defaults() {
+
+	local rc=0
+	local msg=
+	local duration=0
+
+	if [ ! -f $CFG_DEFAULT_FILE ]; then
+		rc=100
+		msg="Default configuration file ($CFG_DEFAULT_FILE) does not exist!"
+	
+	else
+		msg=$(/sbin/cfgmtd -w -f $CFG_DEFAULT_FILE 2>&1)
+		rc=$?
+		if [ $rc == 0 ]; then
+			duration=$(cl_get_board_int "board.reboot")
+			duration=$(($duration + $DSS_RSA_GEN_TIME + $SLEEP_TIME))
+			printf '{"rc":%d,"duration":%d}' $rc $duration
+			cl_close_pipes
+			$CMD_BGND -r reset2defaults -- /bin/sh -c "sleep $SLEEP_TIME; $CMD_REBOOT"
+			exit 0
+		fi
+	fi
+
+	cl_format_error "$rc" "$msg"
+
+	exit 0
+}
+
+
+do_device_reboot() {
+
+	local rc=0
+	local duration=0
+
+	duration=$(cl_get_board_int "board.reboot")
+	duration=$(($duration + $SLEEP_TIME))
+
+	printf '{"rc":%d,"duration":%d}' $rc $duration
+	cl_close_pipes
+
+	$CMD_BGND -r reboot -- /bin/sh -c "sleep $SLEEP_TIME; $CMD_REBOOT"
+
+	exit 0
+}
+
+
+do_device_support() {
+
+	local rc=0
+	local msg=
+	local data=
+	local checksum=
+
+	rm -f $SUP_FILE
+
+	/usr/bin/support $SUP_DIR $SUP_FILE > /dev/null 2>&1
+	if [ ! -f $SUP_FILE ]; then
+		rc=100
+		msg="Support file ($SUP_FILE) couldn't be generated!"
+			
+	else
+		checksum=$(cl_md5sum $SUP_FILE)
+		data=$(uuencode -m $SUP_FILE $SUP_FILE 2>&1)
+		rc=$?
+		if [ $rc != 0 ]; then
+			msg="$data"
+		else
+			data=$(printf %s "$data" | sed '1,1d; $d')
+		fi
+
+		rm -f $SUP_FILE
+	fi
+
+	if [ $rc != 0 ]; then
+		cl_format_error "$rc" "$msg"
+	else
+		printf '{"rc":%d,"checksum":"%s","data":"%s"}' $rc "$checksum" "$(cl_escape_base64 "$data")"
+	fi
+
+	exit 0
+}
+
+cl_lock $LOCK_DIR
+
+if [ ".$1" = ".-d" ]; then
+	do_device_reset2defaults
+fi
+
+if [ ".$1" = ".-r" ]; then
+	do_device_reboot
+fi
+
+if [ ".$1" = ".-s" ]; then
+	do_device_support
+fi
+
+echo "Error: $0 called with unknown parameters ($*)"
+exit 1
+

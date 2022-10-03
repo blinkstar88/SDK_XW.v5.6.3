@@ -1,0 +1,24 @@
+Index: linux-2.6.32.67/kernel/signal.c
+===================================================================
+--- linux-2.6.32.67.orig/kernel/signal.c
++++ linux-2.6.32.67/kernel/signal.c
+@@ -1931,6 +1931,19 @@ relock:
+ 			do_coredump(info->si_signo, info->si_signo, regs);
+ 		}
+ 
++		{
++			struct task_struct *tsk = current;
++			struct pid_namespace *pid_ns = task_active_pid_ns(tsk);
++			if ((pid_ns->child_reaper == tsk)
++				&& (pid_ns == &init_pid_ns))
++			{
++				printk("Death signal for init: signr %d"
++					" signo %d code %d errno %d\n",
++					signr, info->si_signo, info->si_code,
++					info->si_errno);
++			}
++		}
++
+ 		/*
+ 		 * Death signals, no core dump.
+ 		 */

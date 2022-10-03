@@ -1,0 +1,4 @@
+#src-svn packages svn://svn.openwrt2.org/openwrt/branches/packages_8.09 svn://svn.openwrt.org/openwrt/packages
+#src-svn xwrt http://x-wrt.googlecodes.com/svn/tags/kamikaze_8.09.2/package
+#src-svn luci http://svn.luci.subsignals.org/luci/tags/0.8.8/contrib/package
+#src-link customfeed /opt/project/packages

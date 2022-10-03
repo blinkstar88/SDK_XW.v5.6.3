@@ -1,0 +1,41 @@
+--- a/networking/zcip.c
++++ b/networking/zcip.c
+@@ -204,18 +204,19 @@ int zcip_main(int argc, char **argv)
+ #define ready      (L.ready     )
+ #define verbose    (L.verbose   )
+ 
+ 	memset(&L, 0, sizeof(L));
+ 
+ #define FOREGROUND (opts & 1)
+ #define QUIT       (opts & 2)
++#define NODELAY    (opts & 16) //UBNT: skip 5 sec. delay if "-n" option is specified
+ 	// parse commandline: prog [options] ifname script
+ 	// exactly 2 args; -v accumulates and implies -f
+ 	opt_complementary = "=2:vv:vf";
+-	opts = getopt32(argv, "fqr:v", &r_opt, &verbose);
++	opts = getopt32(argv, "fqr:vn", &r_opt, &verbose);
+ #if !BB_MMU
+ 	// on NOMMU reexec early (or else we will rerun things twice)
+ 	if (!FOREGROUND)
+ 		bb_daemonize_or_rexec(0 /*was: DAEMON_CHDIR_ROOT*/, argv);
+ #endif
+ 	// open an ARP socket
+ 	// (need to do it before openlog to prevent openlog from taking
+@@ -241,14 +242,17 @@ int zcip_main(int argc, char **argv)
+ 	setenv("interface", intf, 1);
+ 
+ 	// initialize the interface (modprobe, ifup, etc)
+ 	script_av[1] = (char*)"init";
+ 	if (run(script_av, NULL))
+ 		return EXIT_FAILURE;
+ 
++	//UBNT: Make sure, that all available interfaces are up and running
++	if (!NODELAY) sleep(5);
++
+ 	// initialize saddr
+ 	// saddr is: { u16 sa_family; u8 sa_data[14]; }
+ 	//memset(&saddr, 0, sizeof(saddr));
+ 	//TODO: are we leaving sa_family == 0 (AF_UNSPEC)?!
+ 	safe_strncpy(saddr.sa_data, intf, sizeof(saddr.sa_data));
+ 
+ 	// bind to the interface's ARP socket

@@ -1,0 +1,84 @@
+--- a/src/drivers/driver_wext.c
++++ b/src/drivers/driver_wext.c
+@@ -739,19 +739,21 @@ static void wpa_driver_wext_rfkill_block
+ }
+ 
+ 
+ static void wpa_driver_wext_rfkill_unblocked(void *ctx)
+ {
+ 	struct wpa_driver_wext_data *drv = ctx;
+ 	wpa_printf(MSG_DEBUG, "WEXT: RFKILL unblocked");
++#ifdef CONFIG_IFACE_DOWN_CONTROL
+ 	if (linux_set_iface_flags(drv->ioctl_sock, drv->ifname, 1)) {
+ 		wpa_printf(MSG_DEBUG, "WEXT: Could not set interface UP "
+ 			   "after rfkill unblock");
+ 		return;
+ 	}
++#endif
+ 	/* rtnetlink ifup handler will report interface as enabled */
+ }
+ 
+ 
+ static void wext_get_phy_name(struct wpa_driver_wext_data *drv)
+ {
+ 	/* Find phy (radio) to which this interface belongs */
+@@ -870,26 +872,30 @@ static void wpa_driver_wext_send_rfkill(
+ }
+ 
+ 
+ static int wpa_driver_wext_finish_drv_init(struct wpa_driver_wext_data *drv)
+ {
+ 	int send_rfkill_event = 0;
+ 
+-	if (linux_set_iface_flags(drv->ioctl_sock, drv->ifname, 1) < 0) {
+-		if (rfkill_is_blocked(drv->rfkill)) {
+-			wpa_printf(MSG_DEBUG, "WEXT: Could not yet enable "
+-				   "interface '%s' due to rfkill",
+-				   drv->ifname);
+-			drv->if_disabled = 1;
+-			send_rfkill_event = 1;
+-		} else {
+-			wpa_printf(MSG_ERROR, "WEXT: Could not set "
+-				   "interface '%s' UP", drv->ifname);
+-			return -1;
++	if (!linux_iface_up(drv->ioctl_sock, drv->ifname)) {
++#ifdef CONFIG_IFACE_DOWN_CONTROL
++		if (linux_set_iface_flags(drv->ioctl_sock, drv->ifname, 1) < 0) {
++			if (rfkill_is_blocked(drv->rfkill)) {
++				wpa_printf(MSG_DEBUG, "WEXT: Could not yet enable "
++						"interface '%s' due to rfkill",
++						drv->ifname);
++				drv->if_disabled = 1;
++				send_rfkill_event = 1;
++			} else {
++				wpa_printf(MSG_ERROR, "WEXT: Could not set "
++						"interface '%s' UP", drv->ifname);
++				return -1;
++			}
+ 		}
++#endif
+ 	}
+ 
+ 	/*
+ 	 * Make sure that the driver does not have any obsolete PMKID entries.
+ 	 */
+ 	wpa_driver_wext_flush_pmkid(drv);
+ 
+@@ -961,15 +967,17 @@ void wpa_driver_wext_deinit(void *priv)
+ 	netlink_send_oper_ifla(drv->netlink, drv->ifindex, 0, IF_OPER_UP);
+ 	netlink_deinit(drv->netlink);
+ 	rfkill_deinit(drv->rfkill);
+ 
+ 	if (drv->mlme_sock >= 0)
+ 		eloop_unregister_read_sock(drv->mlme_sock);
+ 
++#ifdef CONFIG_IFACE_DOWN_CONTROL
+ 	(void) linux_set_iface_flags(drv->ioctl_sock, drv->ifname, 0);
++#endif /* CONFIG_IFACE_DOWN_CONTROL */
+ 
+ 	close(drv->ioctl_sock);
+ 	if (drv->mlme_sock >= 0)
+ 		close(drv->mlme_sock);
+ 	os_free(drv->assoc_req_ies);
+ 	os_free(drv->assoc_resp_ies);
+ 	os_free(drv);

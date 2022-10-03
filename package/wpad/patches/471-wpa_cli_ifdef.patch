@@ -1,0 +1,21 @@
+--- a/wpa_supplicant/wpa_cli.c
++++ b/wpa_supplicant/wpa_cli.c
+@@ -22,14 +22,18 @@
+ #include "common/version.h"
+ #include "common/ieee802_11_defs.h"
+ #ifdef ANDROID
+ #include <cutils/properties.h>
+ #endif /* ANDROID */
+ 
+ 
++#ifndef CONFIG_P2P
++#define CONFIG_P2P
++#endif
++
+ static const char *wpa_cli_version =
+ "wpa_cli v" VERSION_STR "\n"
+ "Copyright (c) 2004-2014, Jouni Malinen <j@w1.fi> and contributors";
+ 
+ 
+ static const char *wpa_cli_license =
+ "This software may be distributed under the terms of the BSD license.\n"

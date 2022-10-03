@@ -1,0 +1,12 @@
+#/bin/sh
+
+set -e
+
+OUT=`i2cget -y 0 0x48 0 w`
+
+TEMP=$(( $OUT & 0x7F ))
+if [ $(( $OUT & 0x80 )) -eq 128 ]; then
+	TEMP=$(($TEMP-128))
+fi
+echo $TEMP
+

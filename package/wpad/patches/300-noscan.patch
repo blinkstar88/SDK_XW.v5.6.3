@@ -1,0 +1,56 @@
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -2406,14 +2406,16 @@ static int hostapd_config_fill(struct ho
+ 				wpa_printf(MSG_ERROR, "Line %d: invalid "
+ 					   "assoc_sa_query_retry_timeout",
+ 					   line);
+ 				errors++;
+ 			}
+ #endif /* CONFIG_IEEE80211W */
+ #ifdef CONFIG_IEEE80211N
++		} else if (os_strcmp(buf, "noscan") == 0) {
++			conf->noscan = atoi(pos);
+ 		} else if (os_strcmp(buf, "ieee80211n") == 0) {
+ 			conf->ieee80211n = atoi(pos);
+ 		} else if (os_strcmp(buf, "ht_capab") == 0) {
+ 			if (hostapd_config_ht_capab(conf, pos) < 0) {
+ 				wpa_printf(MSG_ERROR, "Line %d: invalid "
+ 					   "ht_capab", line);
+ 				errors++;
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -527,14 +527,15 @@ struct hostapd_config {
+ 	 * 2 = VI (video)
+ 	 * 3 = VO (voice)
+ 	 */
+ 	struct hostapd_wmm_ac_params wmm_ac_params[4];
+ 
+ 	int ht_op_mode_fixed;
+ 	u16 ht_capab;
++	int noscan;
+ 	int ieee80211n;
+ 	int secondary_channel;
+ 	int require_ht;
+ 	int obss_interval;
+ 	u32 vht_capab;
+ 	int ieee80211ac;
+ 	int require_vht;
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -566,15 +566,15 @@ static void ieee80211n_scan_channels_5g(
+ }
+ 
+ 
+ static int ieee80211n_check_40mhz(struct hostapd_iface *iface)
+ {
+ 	struct wpa_driver_scan_params params;
+ 
+-	if (!iface->conf->secondary_channel)
++	if (!iface->conf->secondary_channel || iface->conf->noscan)
+ 		return 0; /* HT40 not used */
+ 
+ 	hostapd_set_state(iface, HAPD_IFACE_HT_SCAN);
+ 	wpa_printf(MSG_DEBUG, "Scan for neighboring BSSes prior to enabling "
+ 		   "40 MHz channel");
+ 	os_memset(&params, 0, sizeof(params));
+ 	if (iface->current_mode->mode == HOSTAPD_MODE_IEEE80211G)

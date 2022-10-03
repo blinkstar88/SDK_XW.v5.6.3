@@ -1,0 +1,20 @@
+Index: linux-2.6.32.67/net/sched/sch_generic.c
+===================================================================
+--- linux-2.6.32.67.orig/net/sched/sch_generic.c
++++ linux-2.6.32.67/net/sched/sch_generic.c
+@@ -257,8 +257,13 @@ static void dev_watchdog(unsigned long a
+ 
+ 			if (some_queue_timedout) {
+ 				char drivername[64];
+-				WARN_ONCE(1, KERN_INFO "NETDEV WATCHDOG: %s (%s): transmit queue %u timed out\n",
+-				       dev->name, netdev_drivername(dev, drivername, 64), i);
++				static int __once = 1;
++				if (__once)
++				{
++					printk(KERN_INFO "NETDEV WATCHDOG: %s (%s): transmit queue %u timed out\n",
++					       dev->name, netdev_drivername(dev, drivername, 64), i);
++					__once = 0;
++				}
+ 				dev->netdev_ops->ndo_tx_timeout(dev);
+ 			}
+ 			if (!mod_timer(&dev->watchdog_timer,

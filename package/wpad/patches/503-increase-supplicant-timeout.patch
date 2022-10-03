@@ -1,0 +1,37 @@
+diff -Naur a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+--- a/wpa_supplicant/events.c	2016-12-02 11:32:21.565264491 -0800
++++ b/wpa_supplicant/events.c	2016-12-02 13:08:25.623208534 -0800
+@@ -1924,7 +1924,7 @@
+ 		wpa_supplicant_set_state(wpa_s, WPA_COMPLETED);
+ 	} else if (!ft_completed) {
+ 		/* Timeout for receiving the first EAPOL packet */
+-		wpa_supplicant_req_auth_timeout(wpa_s, 10, 0);
++		wpa_supplicant_req_auth_timeout(wpa_s, 240, 0);
+ 	}
+ 	wpa_supplicant_cancel_scan(wpa_s);
+ 
+diff -Naur a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+--- a/wpa_supplicant/wpa_supplicant.c	2016-12-02 11:32:21.561264635 -0800
++++ b/wpa_supplicant/wpa_supplicant.c	2016-12-02 12:57:10.881025721 -0800
+@@ -1891,10 +1891,10 @@
+ 
+ 		if (assoc_failed) {
+ 			/* give IBSS a bit more time */
+-			timeout = ssid->mode == WPAS_MODE_IBSS ? 10 : 5;
++			timeout = ssid->mode == WPAS_MODE_IBSS ? 40 : 60; /* Increased by Ubiquiti for airSync */
+ 		} else if (wpa_s->conf->ap_scan == 1) {
+ 			/* give IBSS a bit more time */
+-			timeout = ssid->mode == WPAS_MODE_IBSS ? 20 : 10;
++			timeout = ssid->mode == WPAS_MODE_IBSS ? 40 : 60; /* Increased by Ubiquiti for airSync */
+ 		}
+ 		wpa_supplicant_req_auth_timeout(wpa_s, timeout, 0);
+ 	}
+@@ -2574,7 +2574,7 @@
+ 			(wpa_key_mgmt_wpa_ieee8021x(wpa_s->key_mgmt) ||
+ 			 wpa_s->key_mgmt == WPA_KEY_MGMT_IEEE8021X_NO_WPA ||
+ 			 wpa_s->key_mgmt == WPA_KEY_MGMT_WPS) ?
+-			70 : 10, 0);
++			70 : 60, 0);
+ 	}
+ 	wpa_s->eapol_received++;
+ 

@@ -1,0 +1,17 @@
+--- a/arch/mips/include/asm/timex.h
++++ b/arch/mips/include/asm/timex.h
+@@ -31,13 +31,13 @@
+  * We know that all SMP capable CPUs have cycle counters.
+  */
+ 
+ typedef unsigned int cycles_t;
+ 
+ static inline cycles_t get_cycles(void)
+ {
+-	return 0;
++	return read_c0_count();
+ }
+ 
+ #endif /* __KERNEL__ */
+ 
+ #endif /*  _ASM_TIMEX_H */

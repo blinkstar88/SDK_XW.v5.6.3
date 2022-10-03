@@ -1,0 +1,130 @@
+--- a/hostapd/main.c
++++ b/hostapd/main.c
+@@ -10,14 +10,15 @@
+ #ifndef CONFIG_NATIVE_WINDOWS
+ #include <syslog.h>
+ #include <grp.h>
+ #endif /* CONFIG_NATIVE_WINDOWS */
+ 
+ #include "utils/common.h"
+ #include "utils/eloop.h"
++#include "utils/build_features.h"
+ #include "crypto/random.h"
+ #include "crypto/tls.h"
+ #include "common/version.h"
+ #include "drivers/driver.h"
+ #include "eap_server/eap.h"
+ #include "eap_server/tncs.h"
+ #include "ap/hostapd.h"
+@@ -531,15 +532,15 @@ int main(int argc, char *argv[])
+ 	interfaces.driver_init = hostapd_driver_init;
+ 	interfaces.global_iface_path = NULL;
+ 	interfaces.global_iface_name = NULL;
+ 	interfaces.global_ctrl_sock = -1;
+ 
+ 	wpa_supplicant_event = hostapd_wpa_event;
+ 	for (;;) {
+-		c = getopt(argc, argv, "b:Bde:f:hKP:Ttvg:G:");
++		c = getopt(argc, argv, "b:Bde:f:hKP:Ttg:G:v::");
+ 		if (c < 0)
+ 			break;
+ 		switch (c) {
+ 		case 'h':
+ 			usage();
+ 			break;
+ 		case 'd':
+@@ -568,14 +569,16 @@ int main(int argc, char *argv[])
+ 			break;
+ #ifdef CONFIG_DEBUG_LINUX_TRACING
+ 		case 'T':
+ 			enable_trace_dbg = 1;
+ 			break;
+ #endif /* CONFIG_DEBUG_LINUX_TRACING */
+ 		case 'v':
++			if (optarg)
++				exit(!has_feature(optarg));
+ 			show_version();
+ 			exit(1);
+ 			break;
+ 		case 'g':
+ 			if (hostapd_get_global_ctrl_iface(&interfaces, optarg))
+ 				return -1;
+ 			break;
+--- /dev/null
++++ b/src/utils/build_features.h
+@@ -0,0 +1,17 @@
++#ifndef BUILD_FEATURES_H
++#define BUILD_FEATURES_H
++
++static inline int has_feature(const char *feat)
++{
++#ifdef IEEE8021X_EAPOL
++	if (!strcmp(feat, "eap"))
++		return 1;
++#endif
++#ifdef IEEE80211N
++	if (!strcmp(feat, "11n"))
++		return 1;
++#endif
++	return 0;
++}
++
++#endif /* BUILD_FEATURES_H */
+--- a/wpa_supplicant/main.c
++++ b/wpa_supplicant/main.c
+@@ -8,14 +8,15 @@
+ 
+ #include "includes.h"
+ #ifdef __linux__
+ #include <fcntl.h>
+ #endif /* __linux__ */
+ 
+ #include "common.h"
++#include "build_features.h"
+ #include "wpa_supplicant_i.h"
+ #include "driver_i.h"
+ #include "p2p_supplicant.h"
+ 
+ 
+ static void usage(void)
+ {
+@@ -166,15 +167,15 @@ int main(int argc, char *argv[])
+ 		return -1;
+ 	iface_count = 1;
+ 
+ 	wpa_supplicant_fd_workaround(1);
+ 
+ 	for (;;) {
+ 		c = getopt(argc, argv,
+-			   "b:Bc:C:D:de:f:g:G:hH:i:I:KLNo:O:p:P:qsTtuvW");
++			   "b:Bc:C:D:de:f:g:G:hH:i:I:KLNo:O:p:P:qsTtuv::W");
+ 		if (c < 0)
+ 			break;
+ 		switch (c) {
+ 		case 'b':
+ 			iface->bridge_ifname = optarg;
+ 			break;
+ 		case 'B':
+@@ -264,16 +265,20 @@ int main(int argc, char *argv[])
+ 			break;
+ #ifdef CONFIG_DBUS
+ 		case 'u':
+ 			params.dbus_ctrl_interface = 1;
+ 			break;
+ #endif /* CONFIG_DBUS */
+ 		case 'v':
+-			printf("%s\n", wpa_supplicant_version);
+-			exitcode = 0;
++			if (optarg) {
++				exitcode = !has_feature(optarg);
++			} else {
++				printf("%s\n", wpa_supplicant_version);
++				exitcode = 0;
++			}
+ 			goto out;
+ 		case 'W':
+ 			params.wait_for_monitor++;
+ 			break;
+ 		case 'N':
+ 			iface_count++;
+ 			iface = os_realloc_array(ifaces, iface_count,

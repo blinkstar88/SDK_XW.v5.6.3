@@ -1,0 +1,99 @@
+From ad00d64e7d8827b3cebd665a0ceb08adabf15e1e Mon Sep 17 00:00:00 2001
+From: Jouni Malinen <jouni@qca.qualcomm.com>
+Date: Thu, 1 Oct 2015 18:51:04 +0300
+Subject: Fix TK configuration to the driver in EAPOL-Key 3/4 retry case
+
+Commit 7d711541dced759b34313477d5d163e65c5b0131 ('Clear TK part of PTK
+after driver key configuration') started clearing TK from memory
+immediately after having configured it to the driver when processing
+EAPOL-Key message 3/4. While this covered the most common case, it did
+not take into account the possibility of the authenticator having to
+retry EAPOL-Key message 3/4 in case the first EAPOL-Key message 4/4
+response is lost. That case ended up trying to reinstall the same TK to
+the driver, but the key was not available anymore.
+
+Fix the EAPOL-Key message 3/4 retry case by configuring TK to the driver
+only once. There was no need to try to set the same key after each
+EAPOL-Key message 3/4 since TK could not change. If actual PTK rekeying
+is used, the new TK will be configured once when processing the new
+EAPOL-Key message 3/4 for the first time.
+
+Signed-off-by: Jouni Malinen <jouni@qca.qualcomm.com>
+---
+ src/rsn_supp/wpa.c   | 8 ++++++++
+ src/rsn_supp/wpa_i.h | 1 +
+ 2 files changed, 9 insertions(+)
+
+--- a/src/rsn_supp/wpa.c
++++ b/src/rsn_supp/wpa.c
+@@ -432,14 +432,15 @@ static void wpa_supplicant_process_1_of_
+ 	ptk = &sm->tptk;
+ 	wpa_derive_ptk(sm, src_addr, key, ptk);
+ 	/* Supplicant: swap tx/rx Mic keys */
+ 	os_memcpy(buf, ptk->u.auth.tx_mic_key, 8);
+ 	os_memcpy(ptk->u.auth.tx_mic_key, ptk->u.auth.rx_mic_key, 8);
+ 	os_memcpy(ptk->u.auth.rx_mic_key, buf, 8);
+ 	sm->tptk_set = 1;
++	sm->tk_to_set = 1;
+ 
+ 	kde = sm->assoc_wpa_ie;
+ 	kde_len = sm->assoc_wpa_ie_len;
+ 
+ #ifdef CONFIG_P2P
+ 	if (sm->p2p) {
+ 		kde_buf = os_malloc(kde_len + 2 + RSN_SELECTOR_LEN + 1);
+@@ -537,14 +538,20 @@ static int wpa_supplicant_install_ptk(st
+ 				      const struct wpa_eapol_key *key)
+ {
+ 	int keylen, rsclen;
+ 	enum wpa_alg alg;
+ 	const u8 *key_rsc;
+ 	u8 null_rsc[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+ 
++	if (!sm->tk_to_set) {
++		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
++			"WPA: Do not re-install same PTK to the driver");
++		return 0;
++	}
++
+ 	wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG,
+ 		"WPA: Installing PTK to the driver");
+ 
+ 	if (sm->pairwise_cipher == WPA_CIPHER_NONE) {
+ 		wpa_dbg(sm->ctx->msg_ctx, MSG_DEBUG, "WPA: Pairwise Cipher "
+ 			"Suite: NONE - do not use pairwise keys");
+ 		return 0;
+@@ -573,14 +580,15 @@ static int wpa_supplicant_install_ptk(st
+ 		wpa_msg(sm->ctx->msg_ctx, MSG_WARNING,
+ 			"WPA: Failed to set PTK to the "
+ 			"driver (alg=%d keylen=%d bssid=" MACSTR ")",
+ 			alg, keylen, MAC2STR(sm->bssid));
+ 		return -1;
+ 	}
+ 
++	sm->tk_to_set = 0;
+ 	if (sm->wpa_ptk_rekey) {
+ 		eloop_cancel_timeout(wpa_sm_rekey_ptk, sm, NULL);
+ 		eloop_register_timeout(sm->wpa_ptk_rekey, 0, wpa_sm_rekey_ptk,
+ 				       sm, NULL);
+ 	}
+ 
+ 	return 0;
+--- a/src/rsn_supp/wpa_i.h
++++ b/src/rsn_supp/wpa_i.h
+@@ -19,14 +19,15 @@ struct wpa_eapol_key;
+  * struct wpa_sm - Internal WPA state machine data
+  */
+ struct wpa_sm {
+ 	u8 pmk[PMK_LEN];
+ 	size_t pmk_len;
+ 	struct wpa_ptk ptk, tptk;
+ 	int ptk_set, tptk_set;
++	unsigned int tk_to_set:1;
+ 	u8 snonce[WPA_NONCE_LEN];
+ 	u8 anonce[WPA_NONCE_LEN]; /* ANonce from the last 1/4 msg */
+ 	int renew_snonce;
+ 	u8 rx_replay_counter[WPA_REPLAY_COUNTER_LEN];
+ 	int rx_replay_counter_set;
+ 	u8 request_counter[WPA_REPLAY_COUNTER_LEN];
+ 

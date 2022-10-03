@@ -1,0 +1,137 @@
+Index: linux-2.6.32.65/fs/seq_file.c
+===================================================================
+--- linux-2.6.32.65.orig/fs/seq_file.c
++++ linux-2.6.32.65/fs/seq_file.c
+@@ -8,11 +8,27 @@
+ #include <linux/fs.h>
+ #include <linux/module.h>
+ #include <linux/seq_file.h>
++#include <linux/vmalloc.h>
+ #include <linux/slab.h>
++#include <linux/mm.h>
+ 
+ #include <asm/uaccess.h>
+ #include <asm/page.h>
+ 
++static void *seq_buf_alloc(unsigned long size)
++{
++        void *buf;
++
++        /*
++         * __GFP_NORETRY to avoid oom-killings with high-order allocations -
++         * it's better to fall back to vmalloc() than to kill things.
++         */
++        buf = kmalloc(size, GFP_KERNEL | __GFP_NORETRY | __GFP_NOWARN);
++        if (!buf && size > PAGE_SIZE)
++                buf = vmalloc(size);
++        return buf;
++}
++
+ /**
+  *	seq_open -	initialize sequential file
+  *	@file: file we initialize
+@@ -115,7 +131,7 @@ static int traverse(struct seq_file *m,
+ 
+ Eoverflow:
+ 	m->op->stop(m, p);
+-	kfree(m->buf);
++	kvfree(m->buf);
+ 	m->buf = kmalloc(m->size <<= 1, GFP_KERNEL);
+ 	return !m->buf ? -ENOMEM : -EAGAIN;
+ }
+@@ -209,7 +225,7 @@ ssize_t seq_read(struct file *file, char
+ 		if (m->count < m->size)
+ 			goto Fill;
+ 		m->op->stop(m, p);
+-		kfree(m->buf);
++		kvfree(m->buf);
+ 		m->buf = kmalloc(m->size <<= 1, GFP_KERNEL);
+ 		if (!m->buf)
+ 			goto Enomem;
+@@ -325,7 +341,7 @@ EXPORT_SYMBOL(seq_lseek);
+ int seq_release(struct inode *inode, struct file *file)
+ {
+ 	struct seq_file *m = (struct seq_file *)file->private_data;
+-	kfree(m->buf);
++	kvfree(m->buf);
+ 	kfree(m);
+ 	return 0;
+ }
+@@ -569,6 +585,24 @@ int single_open(struct file *file, int (
+ }
+ EXPORT_SYMBOL(single_open);
+ 
++int single_open_size(struct file *file, int (*show)(struct seq_file *, void *),
++                void *data, size_t size)
++{
++        char *buf = seq_buf_alloc(size);
++        int ret;
++        if (!buf)
++                return -ENOMEM;
++        ret = single_open(file, show, data);
++        if (ret) {
++                kvfree(buf);
++                return ret;
++        }
++        ((struct seq_file *)file->private_data)->buf = buf;
++        ((struct seq_file *)file->private_data)->size = size;
++        return 0;
++}
++EXPORT_SYMBOL(single_open_size);
++
+ int single_release(struct inode *inode, struct file *file)
+ {
+ 	const struct seq_operations *op = ((struct seq_file *)file->private_data)->op;
+Index: linux-2.6.32.65/include/linux/mm.h
+===================================================================
+--- linux-2.6.32.65.orig/include/linux/mm.h
++++ linux-2.6.32.65/include/linux/mm.h
+@@ -298,6 +298,8 @@ static inline int is_vmalloc_or_module_a
+ }
+ #endif
+ 
++extern void kvfree(const void *addr);
++
+ static inline struct page *compound_head(struct page *page)
+ {
+ 	if (unlikely(PageTail(page)))
+Index: linux-2.6.32.65/mm/util.c
+===================================================================
+--- linux-2.6.32.65.orig/mm/util.c
++++ linux-2.6.32.65/mm/util.c
+@@ -9,6 +9,7 @@
+ #include <linux/mman.h>
+ #include <linux/file.h>
+ #include <asm/uaccess.h>
++#include <linux/vmalloc.h>
+ 
+ #define CREATE_TRACE_POINTS
+ #include <trace/events/kmem.h>
+@@ -190,6 +191,15 @@ void kzfree(const void *p)
+ }
+ EXPORT_SYMBOL(kzfree);
+ 
++void kvfree(const void *addr)
++{
++        if (is_vmalloc_addr(addr))
++                vfree(addr);
++        else
++                kfree(addr);
++}
++EXPORT_SYMBOL(kvfree);
++
+ /*
+  * strndup_user - duplicate an existing string from user space
+  * @s: The string to duplicate
+Index: linux-2.6.32.65/include/linux/seq_file.h
+===================================================================
+--- linux-2.6.32.65.orig/include/linux/seq_file.h
++++ linux-2.6.32.65/include/linux/seq_file.h
+@@ -117,6 +117,7 @@ static inline int seq_nodemask_list(stru
+ }
+ 
+ int single_open(struct file *, int (*)(struct seq_file *, void *), void *);
++int single_open_size(struct file *file, int (*show)(struct seq_file *, void *), void *data, size_t size);
+ int single_release(struct inode *, struct file *);
+ void *__seq_open_private(struct file *, const struct seq_operations *, int);
+ int seq_open_private(struct file *, const struct seq_operations *, int);

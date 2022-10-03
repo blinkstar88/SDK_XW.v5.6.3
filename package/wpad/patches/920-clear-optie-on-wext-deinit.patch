@@ -1,0 +1,36 @@
+--- a/src/drivers/driver_wext.c
++++ b/src/drivers/driver_wext.c
+@@ -1027,14 +1027,16 @@ static int wpa_driver_wext_finish_drv_in
+ 	}
+ 
+ 	return 0;
+ }
+ 
+ static int wpa_driver_wext_set_drop_unencrypted(void *priv, int enabled);
+ 
++static int wpa_driver_wext_set_gen_ie(void *priv, const u8 *ie, size_t ie_len);
++
+ /**
+  * wpa_driver_wext_deinit - Deinitialize WE driver interface
+  * @priv: Pointer to private wext data from wpa_driver_wext_init()
+  *
+  * Shut down driver interface and processing of driver events. Free
+  * private data buffer if one was allocated in wpa_driver_wext_init().
+  */
+@@ -1042,14 +1044,16 @@ void wpa_driver_wext_deinit(void *priv)
+ {
+ 	struct wpa_driver_wext_data *drv = priv;
+ 
+ 	wpa_driver_wext_set_auth_param(drv, IW_AUTH_WPA_ENABLED, 0);
+ 
+ 	wpa_driver_wext_set_drop_unencrypted(drv, 0);
+ 
++	wpa_driver_wext_set_gen_ie(drv, (u8 *) "", 0);
++
+ 	eloop_cancel_timeout(wpa_driver_wext_scan_timeout, drv, drv->ctx);
+ 
+ 	wext_80211_set_roaming_auto(drv);
+ 
+ 	/*
+ 	 * Clear possibly configured driver parameters in order to make it
+ 	 * easier to use the driver after wpa_supplicant has been terminated.

@@ -1,0 +1,88 @@
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -1559,14 +1559,16 @@ static inline struct sk_buff *__dev_allo
+ 	if (likely(skb))
+ 		skb_reserve(skb, NET_SKB_PAD_ALLOC);
+ 	return skb;
+ }
+ 
+ extern struct sk_buff *dev_alloc_skb(unsigned int length);
+ 
++extern struct sk_buff *build_skb(void *data, unsigned int frag_size);
++
+ extern struct sk_buff *__netdev_alloc_skb(struct net_device *dev,
+ 		unsigned int length, gfp_t gfp_mask);
+ 
+ /**
+  *	netdev_alloc_skb - allocate an skbuff for rx on a specific device
+  *	@dev: network device to receive on
+  *	@length: length to allocate
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -581,14 +581,66 @@ struct sk_buff *dev_alloc_skb(unsigned i
+ 	 * There is more code here than it seems:
+ 	 * __dev_alloc_skb is an inline
+ 	 */
+ 	return __dev_alloc_skb(length, GFP_ATOMIC);
+ }
+ EXPORT_SYMBOL(dev_alloc_skb);
+ 
++/* return minimum truesize of one skb containing X bytes of data */
++#define SKB_TRUESIZE(X) ((X) +                                          \
++                         SKB_DATA_ALIGN(sizeof(struct sk_buff)) +       \
++                         SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
++
++struct sk_buff *build_skb(void *data, unsigned int frag_size)
++{
++        struct skb_shared_info *shinfo;
++        struct sk_buff *skb;
++        unsigned int size = frag_size ? : ksize(data);
++        struct kmem_cache *cache = skbuff_head_cache;
++
++        /* Get the HEAD */
++        skb = kmem_cache_alloc_node(cache, GFP_ATOMIC, -1);
++        if (!skb)
++                goto out;
++
++        size -= SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
++
++        /*
++         * Only clear those fields we need to clear, not those that we will
++         * actually initialise below. Hence, don't put any more fields after
++         * the tail pointer in struct sk_buff!
++         */
++        memset(skb, 0, offsetof(struct sk_buff, tail));
++        skb->truesize = size + sizeof(struct sk_buff);
++        atomic_set(&skb->users, 1);
++        skb->head = data;
++        skb->data = data;
++        skb_reset_tail_pointer(skb);
++        skb->end = skb->tail + size;
++        kmemcheck_annotate_bitfield(skb, flags1);
++        kmemcheck_annotate_bitfield(skb, flags2);
++#ifdef NET_SKBUFF_DATA_USES_OFFSET
++        skb->mac_header = ~0U;
++#endif
++        /* make sure we initialize shinfo sequentially */
++        shinfo = skb_shinfo(skb);
++        atomic_set(&shinfo->dataref, 1);
++        shinfo->nr_frags  = 0;
++        shinfo->gso_size = 0;
++        shinfo->gso_segs = 0;
++        shinfo->gso_type = 0;
++        shinfo->ip6_frag_id = 0;
++        shinfo->tx_flags.flags = 0;
++        skb_frag_list_init(skb);
++        memset(&shinfo->hwtstamps, 0, sizeof(shinfo->hwtstamps));
++out:
++        return skb;
++}
++EXPORT_SYMBOL(build_skb);
++
+ static void skb_drop_list(struct sk_buff **listp)
+ {
+ 	struct sk_buff *list = *listp;
+ 
+ 	*listp = NULL;
+ 
+ 	do {

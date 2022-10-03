@@ -1,0 +1,305 @@
+--- a/net/core/skb_dma_map.c
++++ b/net/core/skb_dma_map.c
+@@ -4,14 +4,15 @@
+  */
+ 
+ #include <linux/kernel.h>
+ #include <linux/module.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/skbuff.h>
+ 
++#ifndef CONFIG_PRIV_SKB_MEM
+ int skb_dma_map(struct device *dev, struct sk_buff *skb,
+ 		enum dma_data_direction dir)
+ {
+ 	struct skb_shared_info *sp = skb_shinfo(skb);
+ 	dma_addr_t map;
+ 	int i;
+ 
+@@ -59,7 +60,8 @@ void skb_dma_unmap(struct device *dev, s
+ 		skb_frag_t *fp = &sp->frags[i];
+ 
+ 		dma_unmap_page(dev, sp->dma_maps[i],
+ 			       fp->size, dir);
+ 	}
+ }
+ EXPORT_SYMBOL(skb_dma_unmap);
++#endif
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -150,14 +150,166 @@ EXPORT_SYMBOL(skb_under_panic);
+ 
+ /* 	Allocate a new skbuff. We do this ourselves so we can fill in a few
+  *	'private' fields and also do memory statistics to find all the
+  *	[BEEP] leaks.
+  *
+  */
+ 
++#ifdef CONFIG_PRIV_SKB_MEM
++#define PRIV_SKB_MEM_2K (CONFIG_PRIV_SKB_MEM_2K * 0x100000)
++#define PRIV_SKB_MEM_4K (CONFIG_PRIV_SKB_MEM_4K * 0x100000)
++u8 priv_skb_mem[PRIV_SKB_MEM_2K + PRIV_SKB_MEM_4K +
++                SMP_CACHE_BYTES];
++#define PRIV_BUFSIZE_2K 2048
++#define PRIV_BUFSIZE_4K 4096
++#define PRIV_SKB2K_MAX (PRIV_SKB_MEM_2K / PRIV_BUFSIZE_2K)
++#define PRIV_SKB4K_MAX (PRIV_SKB_MEM_4K / PRIV_BUFSIZE_4K)
++u32 ps_head2k = 0;
++u32 ps_tail2k = 0;
++u32 ps_head4k = 0;
++u32 ps_tail4k = 0;
++u8 *priv_skb_list_2k[PRIV_SKB2K_MAX];
++u8 *priv_skb_list_4k[PRIV_SKB4K_MAX];
++spinlock_t priv_skb2k_lock;
++spinlock_t priv_skb4k_lock;
++#ifdef PRIV_SKB_DEBUG
++u32 ps_2k_alloc_cnt = 0;
++u32 ps_2k_free_cnt = 0;
++#endif
++
++void priv_skb_init(void)
++{
++    u8 * priv_skb_mem_2k = (u8 *)((((unsigned long)priv_skb_mem) + SMP_CACHE_BYTES - 1) &
++                                ~(SMP_CACHE_BYTES - 1));
++    u8 * priv_skb_mem_4k = (u8 *)(((unsigned long)priv_skb_mem_2k) + PRIV_SKB_MEM_2K);
++
++    /* Init 2K skb list */
++    ps_head2k = 0;
++    ps_tail2k = 0;
++
++    while (ps_tail2k < PRIV_SKB2K_MAX) {
++        priv_skb_list_2k[ps_tail2k] = (u8 *)(((unsigned long)priv_skb_mem_2k) +
++                                        (ps_tail2k * PRIV_BUFSIZE_2K));
++        ps_tail2k++;
++    }
++    ps_tail2k = -1;
++#ifdef PRIV_SKB_DEBUG
++    ps_2k_alloc_cnt = 0;
++    ps_2k_free_cnt = 0;
++#endif
++    spin_lock_init(&priv_skb2k_lock);
++
++    /* Init 4K skb list */
++    ps_head4k = 0;
++    ps_tail4k = 0;
++
++    while (ps_tail4k < PRIV_SKB4K_MAX) {
++        priv_skb_list_4k[ps_tail4k] = (u8 *)(((unsigned long)priv_skb_mem_4k) +
++                                        (ps_tail4k * PRIV_BUFSIZE_4K));
++        ps_tail4k++;
++    }
++    ps_tail4k = -1;
++    spin_lock_init(&priv_skb4k_lock);
++
++    printk(KERN_ERR "\n****************ALLOC***********************\n");
++    printk(KERN_ERR " Packet mem: %x (0x%x bytes)\n", (unsigned)priv_skb_mem_2k, sizeof(priv_skb_mem) - SMP_CACHE_BYTES);
++    printk(KERN_ERR "********************************************\n\n");
++}
++
++u8* priv_skb_get_2k(void)
++{
++    u8 *skbmem;
++    unsigned long flags = 0;
++    int from_irq = in_irq();
++
++    if (!from_irq)
++        spin_lock_irqsave(priv_skb2k_lock, flags);
++
++    if(ps_head2k != ps_tail2k) {
++        skbmem = priv_skb_list_2k[ps_head2k];
++        priv_skb_list_2k[ps_head2k] = NULL;
++        ps_head2k = (ps_head2k + 1) % PRIV_SKB2K_MAX;
++#ifdef PRIV_SKB_DEBUG
++        ps_2k_alloc_cnt++;
++#endif
++    } else  {
++        skbmem = NULL;
++    }
++
++    if (!from_irq)
++        spin_unlock_irqrestore(priv_skb2k_lock, flags);
++
++    return skbmem;
++}
++
++u8* priv_skb_get_4k(void)
++{
++    u8 *skbmem;
++    unsigned long flags = 0;
++    int from_irq = in_irq();
++
++    if (!from_irq)
++        spin_lock_irqsave(priv_skb4k_lock, flags);
++    if(ps_head4k != ps_tail4k) {
++        skbmem = priv_skb_list_4k[ps_head4k];
++        priv_skb_list_4k[ps_head4k] = NULL;
++        ps_head4k = (ps_head4k + 1) % PRIV_SKB4K_MAX;
++    } else  {
++        skbmem = NULL;
++    }
++    if (!from_irq)
++        spin_unlock_irqrestore(priv_skb4k_lock, flags);
++    return skbmem;
++}
++
++u8* priv_skbmem_get(int size)
++{
++    if(size <= PRIV_BUFSIZE_2K)
++        return priv_skb_get_2k();
++    else
++        return priv_skb_get_4k();
++}
++
++void priv_skb_free_2k(u8 *skbmem)
++{
++    unsigned long flags = 0;
++    int from_irq = in_irq();
++
++    if (!from_irq)
++        spin_lock_irqsave(priv_skb2k_lock, flags);
++    ps_tail2k = (ps_tail2k + 1) % PRIV_SKB2K_MAX;
++    priv_skb_list_2k[ps_tail2k] = skbmem;
++#ifdef PRIV_SKB_DEBUG
++    ps_2k_free_cnt++;
++#endif
++    if (!from_irq)
++        spin_unlock_irqrestore(priv_skb2k_lock, flags);
++}
++
++void priv_skb_free_4k(u8 *skbmem)
++{
++    unsigned long flags = 0;
++    int from_irq = in_irq();
++    if (!from_irq)
++        spin_lock_irqsave(priv_skb4k_lock, flags);
++    ps_tail4k = (ps_tail4k + 1) % PRIV_SKB4K_MAX;
++    priv_skb_list_4k[ps_tail4k] = skbmem;
++    if (!from_irq)
++        spin_unlock_irqrestore(priv_skb4k_lock, flags);
++}
++
++void priv_skbmem_free(u8 *skbmem, int size)
++{
++    if(size <= PRIV_BUFSIZE_2K)
++        priv_skb_free_2k(skbmem);
++    else
++        priv_skb_free_4k(skbmem);
++}
++#endif
++
+ /**
+  *	__alloc_skb	-	allocate a network buffer
+  *	@size: size to allocate
+  *	@gfp_mask: allocation mask
+  *	@fclone: allocate from fclone cache instead of head cache
+  *		and allocate a cloned (child) skb
+  *	@node: numa node to allocate memory on
+@@ -181,16 +333,24 @@ struct sk_buff *__alloc_skb(unsigned int
+ 
+ 	/* Get the HEAD */
+ 	skb = kmem_cache_alloc_node(cache, gfp_mask & ~__GFP_DMA, node);
+ 	if (!skb)
+ 		goto out;
+ 
+ 	size = SKB_DATA_ALIGN(size);
++#ifdef CONFIG_PRIV_SKB_MEM
++    if (unlikely((size > PRIV_BUFSIZE_4K) || ((data = priv_skbmem_get(size +
++            sizeof(struct skb_shared_info))) == NULL))) {
++	    data = kmalloc_node_track_caller(size + sizeof(struct skb_shared_info),
++			    gfp_mask, node);
++    }
++#else
+ 	data = kmalloc_node_track_caller(size + sizeof(struct skb_shared_info),
+ 			gfp_mask, node);
++#endif
+ 	if (!data)
+ 		goto nodata;
+ 
+ 	/*
+ 	 * Only clear those fields we need to clear, not those that we will
+ 	 * actually initialise below. Hence, don't put any more fields after
+ 	 * the tail pointer in struct sk_buff!
+@@ -334,28 +494,41 @@ static void skb_clone_fraglist(struct sk
+ 
+ 	skb_walk_frags(skb, list)
+ 		skb_get(list);
+ }
+ 
+ static void skb_release_data(struct sk_buff *skb)
+ {
++#ifdef CONFIG_PRIV_SKB_MEM
++    u32 size;
++#endif
++
+ 	if (!skb->cloned ||
+ 	    !atomic_sub_return(skb->nohdr ? (1 << SKB_DATAREF_SHIFT) + 1 : 1,
+ 			       &skb_shinfo(skb)->dataref)) {
+ 		if (skb_shinfo(skb)->nr_frags) {
+ 			int i;
+ 			for (i = 0; i < skb_shinfo(skb)->nr_frags; i++)
+ 				put_page(skb_shinfo(skb)->frags[i].page);
+ 		}
+ 
+ 		if (skb_has_frags(skb))
+ 			skb_drop_fraglist(skb);
+ 
++#ifdef CONFIG_PRIV_SKB_MEM
++        if (likely((skb->head - priv_skb_mem) < sizeof(priv_skb_mem))) {
++            size = skb->end - skb->head + sizeof(struct skb_shared_info);
++            priv_skbmem_free(skb->head, size);
++        } else {
+ 		kfree(skb->head);
+ 	}
++#else
++		kfree(skb->head);
++#endif
++	}
+ }
+ 
+ /*
+  *	Free an skbuff by memory without cleaning the state.
+  */
+ static void kfree_skbmem(struct sk_buff *skb)
+ {
+@@ -809,15 +982,22 @@ int pskb_expand_head(struct sk_buff *skb
+ 	BUG_ON(nhead < 0);
+ 
+ 	if (skb_shared(skb))
+ 		BUG();
+ 
+ 	size = SKB_DATA_ALIGN(size);
+ 
++#ifdef CONFIG_PRIV_SKB_MEM
++    if (unlikely((size > PRIV_BUFSIZE_4K) || ((data = priv_skbmem_get(size +
++            sizeof(struct skb_shared_info))) == NULL))) {
+ 	data = kmalloc(size + sizeof(struct skb_shared_info), gfp_mask);
++    }
++#else
++	data = kmalloc(size + sizeof(struct skb_shared_info), gfp_mask);
++#endif
+ 	if (!data)
+ 		goto nodata;
+ 
+ 	/* Copy only real data... and, alas, header. This should be
+ 	 * optimized for the cases when header is void. */
+ #ifdef NET_SKBUFF_DATA_USES_OFFSET
+ 	memcpy(data + nhead, skb->head, skb->tail);
+@@ -2781,14 +2961,18 @@ void __init skb_init(void)
+ 					      NULL);
+ 	skbuff_fclone_cache = kmem_cache_create("skbuff_fclone_cache",
+ 						(2*sizeof(struct sk_buff)) +
+ 						sizeof(atomic_t),
+ 						0,
+ 						SLAB_HWCACHE_ALIGN|SLAB_PANIC,
+ 						NULL);
++
++#ifdef CONFIG_PRIV_SKB_MEM
++    priv_skb_init();
++#endif
+ }
+ 
+ /**
+  *	skb_to_sgvec - Fill a scatter-gather list from a socket buffer
+  *	@skb: Socket buffer containing the buffers to be mapped
+  *	@sg: The scatter-gather list to map into
+  *	@offset: The offset into the buffer's contents to start mapping

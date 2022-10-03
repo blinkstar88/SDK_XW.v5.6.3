@@ -1,0 +1,66 @@
+Index: binutils-2.17/bfd/doc/bfd.texinfo
+===================================================================
+--- binutils-2.17.orig/bfd/doc/bfd.texinfo
++++ binutils-2.17/bfd/doc/bfd.texinfo
+@@ -318,7 +318,7 @@ All of BFD lives in one directory.
+ @printindex cp
+ 
+ @tex
+-% I think something like @colophon should be in texinfo.  In the
++% I think something like @@colophon should be in texinfo.  In the
+ % meantime:
+ \long\def\colophon{\hbox to0pt{}\vfill
+ \centerline{The body of this manual is set in}
+@@ -329,7 +329,7 @@ All of BFD lives in one directory.
+ \centerline{{\sl\fontname\tensl\/}}
+ \centerline{are used for emphasis.}\vfill}
+ \page\colophon
+-% Blame: doc@cygnus.com, 28mar91.
++% Blame: doc@@cygnus.com, 28mar91.
+ @end tex
+ 
+ @contents
+Index: binutils-2.17/ld/ld.texinfo
+===================================================================
+--- binutils-2.17.orig/ld/ld.texinfo
++++ binutils-2.17/ld/ld.texinfo
+@@ -1653,7 +1653,7 @@ the linker script being used by the link
+ 
+ @kindex --version-script=@var{version-scriptfile}
+ @cindex version script, symbol versions
+-@itemx --version-script=@var{version-scriptfile}
++@item --version-script=@var{version-scriptfile}
+ Specify the name of a version script to the linker.  This is typically
+ used when creating shared libraries to specify additional information
+ about the version hierarchy for the library being created.  This option
+@@ -6635,7 +6635,7 @@ If you have more than one @code{SECT} st
+ @printindex cp
+ 
+ @tex
+-% I think something like @colophon should be in texinfo.  In the
++% I think something like @@colophon should be in texinfo.  In the
+ % meantime:
+ \long\def\colophon{\hbox to0pt{}\vfill
+ \centerline{The body of this manual is set in}
+@@ -6646,7 +6646,7 @@ If you have more than one @code{SECT} st
+ \centerline{{\sl\fontname\tensl\/}}
+ \centerline{are used for emphasis.}\vfill}
+ \page\colophon
+-% Blame: doc@cygnus.com, 28mar91.
++% Blame: doc@@cygnus.com, 28mar91.
+ @end tex
+ 
+ 
+Index: binutils-2.17/bfd/doc/elf.texi
+===================================================================
+--- binutils-2.17.orig/bfd/doc/elf.texi
++++ binutils-2.17/bfd/doc/elf.texi
+@@ -8,7 +8,7 @@ to be written.  The code is changing qui
+ haven't bothered yet.
+ 
+ @findex bfd_elf_find_section
+-@subsubsection @code{bfd_elf_find_section}
++@subsection @code{bfd_elf_find_section}
+ @strong{Synopsis}
+ @example
+ struct elf_internal_shdr *bfd_elf_find_section (bfd *abfd, char *name);

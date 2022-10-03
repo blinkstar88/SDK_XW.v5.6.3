@@ -1,0 +1,285 @@
+#!/bin/sh
+
+. /lib/ubnt/cl_functions.sh
+
+LOCK_DIR="/tmp/ubntconf_cl.lock"
+CFG_SYSTEM_FILE="/tmp/system.cfg"
+CFG_RUNNING_FILE="/tmp/running.cfg"
+MERGE_FILE_DIR="/tmp"
+MERGE_FILE="$MERGE_FILE_DIR/.merging.cfg"
+MERGE_FILE_GZIP="$MERGE_FILE.gz"
+TEST_MODE_FILE="/var/run/testmode"
+TEST_MODE_TIME=300
+CMD_SOFTRESTART="/usr/etc/rc.d/rc.softrestart"
+CMD_BGND="/usr/bin/bgnd"
+
+do_cfg_get_gzip() {
+
+	local checksum="$1"
+
+	local rc=0
+	local data=
+	local cfg_checksum=
+
+	if [ ! -f $CFG_RUNNING_FILE ]; then
+		rc=100
+		msg="Configuration file ($CFG_RUNNING_FILE) does not exist!"
+
+	else
+		cfg_checksum=$(cl_md5sum $CFG_RUNNING_FILE)
+		if [ "$cfg_checksum" != "$checksum" ]; then
+			data=$(gzip -c $CFG_RUNNING_FILE | uuencode -m $CFG_RUNNING_FILE 2>&1)
+			rc=$?
+			if [ $rc != 0 ]; then
+				msg="$data"
+			else
+				data=$(printf %s "$data" | sed '1,1d;$d')
+			fi
+		fi
+	fi
+
+	if [ $rc != 0 ]; then
+		cl_format_error "$rc" "$msg"
+
+	else
+		printf '{"rc":%d,"checksum":"%s"' $rc "$(cl_escape_json "$cfg_checksum")"
+		if [ -n "$data" ]; then
+			printf ',"format":"gzip","data":"%s"' "$(cl_escape_base64 "$data")"
+		fi
+		printf '}'
+	fi
+
+	exit 0
+}
+
+
+do_cfg_set_diff() {
+
+	local checksum="$1"
+	local diff_file="$2"
+
+	local rc=0
+	local msg=
+	local cfg_checksum=
+
+	if [ ! -f "$CFG_RUNNING_FILE" ]; then
+		rc=100
+		msg="Configuration file ($CFG_RUNNING_FILE) does not exist!"
+
+	else
+		cp $CFG_RUNNING_FILE $MERGE_FILE
+		chmod 777 $MERGE_FILE
+
+		# replace the second diff line (diff is taken from stdin pipe)  - set the new file name of file to be patched
+		data=$(sed '2 c\+++ '$MERGE_FILE "$diff_file")
+
+		cd $MERGE_FILE_DIR
+		msg=$(printf "%s\n" "$data" | patch 2>&1)
+		rc=$?
+		if [ $rc != 0 ]; then
+			msg="Patch error: $msg"
+
+		else
+			cfg_checksum=$(cl_md5sum $MERGE_FILE)
+			if [ "$cfg_checksum" != "$checksum" ]; then
+				rc=101
+				msg=$(printf "Checksum failed (passed: %s, required: %s)" "$checksum" "$cfg_checksum")
+
+			else
+				mv $MERGE_FILE $CFG_SYSTEM_FILE
+			fi			
+		fi
+	fi
+
+	rm -f $MERGE_FILE
+
+	if [ $rc != 0 ]; then
+		cl_format_error "$rc" "$msg"
+	else
+		printf '{"rc":%d,"checksum":"%s"}' $rc "$(cl_escape_json "$cfg_checksum")"
+	fi
+
+	exit 0
+}
+
+
+do_cfg_set_gzip() {
+
+	local checksum="$1"
+	local gzip_file="$2"
+
+	local rc=0
+	local msg=
+	local cfg_checksum=
+
+	if [ ! -f "$gzip_file" ]; then
+		rc=100
+		msg="Gzip file ($gzip_file) does not exist!"
+
+	else
+		rm -f $MERGE_FILE
+		rm -f $MERGE_FILE_GZIP
+
+		data=$(sed -e 's/.\{60\}/&\n/g' "$gzip_file" 2>&1)
+		msg=$(printf "begin-base64 777 %s\n%s\n====\n" "$MERGE_FILE_GZIP" "$data" | uudecode 2>&1)
+		rc=$?
+		if [ $rc != 0 ]; then
+			msg="Uudecode error: $msg"
+
+		else
+			msg=$(gunzip "$MERGE_FILE_GZIP")
+			rc=$?
+			if [ $rc != 0 ]; then
+				msg="Gunzip error: $msg"
+
+			else
+				cfg_checksum=$(cl_md5sum $MERGE_FILE)
+				if [ "$cfg_checksum" != "$checksum" ]; then
+					rc=101
+					msg=$(printf "Checksum failed (passed: %s, required: %s)" "$checksum" "$cfg_checksum")
+
+				else
+					chmod 777 $MERGE_FILE
+					mv $MERGE_FILE $CFG_SYSTEM_FILE
+				fi			
+			fi
+		fi
+	fi
+
+	rm -f $MERGE_FILE_GZIP
+	rm -f $MERGE_FILE
+
+	if [ $rc != 0 ]; then
+		cl_format_error "$rc" "$msg"
+	else
+		printf '{"rc":%d,"checksum":"%s"}' $rc "$(cl_escape_json "$cfg_checksum")"
+	fi
+
+	exit 0
+}
+
+
+do_cfg_apply() {
+
+	local checksum="$1"
+	local rollback_timeout="$2"
+
+	local rc=0
+	local msg=
+	local cfg_checksum=
+
+	if [ ! -f $CFG_SYSTEM_FILE ]; then
+		rc=100
+		msg="Configuration file ($CFG_SYSTEM_FILE) does not exist!"
+
+	else
+		cfg_checksum=$(cl_md5sum $CFG_SYSTEM_FILE)
+		if [ "$cfg_checksum" != "$checksum" ]; then
+			rc=101
+			msg=$(printf "Checksum failed (passed: %s, required: %s)" "$checksum" "$cfg_checksum")
+
+		else
+			if [ -n "$rollback_timeout" ] && [ "$rollback_timeout" -gt 0 2>/dev/null ]; then
+				echo "$rollback_timeout" > $TEST_MODE_FILE
+			else
+				echo "$TEST_MODE_TIME" > $TEST_MODE_FILE
+			fi
+			if [ ! -f $TEST_MODE_FILE ]; then
+				rc=102
+				msg="Couldn't create test mode file ($TEST_MODE_FILE)!"
+
+			else
+				chmod 755 $TEST_MODE_FILE
+				chmod 777 $CFG_SYSTEM_FILE
+				printf '{"rc":%d,"checksum":"%s"}' $rc "$(cl_escape_json "$cfg_checksum")"
+				cl_close_pipes
+				$CMD_BGND -r testmode -- /bin/sh -c "sleep $SLEEP_TIME; $CMD_SOFTRESTART test"
+				exit 0
+			fi
+		fi
+	fi
+
+	cl_format_error "$rc" "$msg"
+
+	exit 0
+}
+
+
+do_cfg_commit() {
+
+	local checksum="$1"
+
+	local rc=0
+	local msg=
+	local cfg_checksum=
+	local run_checksum=
+
+	if [ ! -f $CFG_SYSTEM_FILE ]; then
+		rc=100
+		msg="Configuration file ($CFG_SYSTEM_FILE) does not exist!"
+
+	else
+		cfg_checksum=$(cl_md5sum $CFG_SYSTEM_FILE)
+		run_checksum=$(cl_md5sum $CFG_RUNNING_FILE)
+		if [ "$cfg_checksum" != "$checksum" ]; then
+			rc=101
+			msg=$(printf "Checksum failed (passed: %s, required: %s)" "$checksum" "$cfg_checksum")
+
+		elif [ "$run_checksum" != "$checksum" ]; then
+			rc=102
+			msg=$(printf "Checksum of running.cfg failed (passed: %s, current: %s). Maybe command config-apply still running?" "$checksum" "$run_checksum")
+
+		elif [ ! -f $TEST_MODE_FILE ]; then
+			rc=103
+			msg="System must be in test mode."
+
+		else
+			chmod 644 $CFG_SYSTEM_FILE
+			rm -f $TEST_MODE_FILE
+			sort $CFG_RUNNING_FILE > $CFG_SYSTEM_FILE
+			msg=$(/sbin/cfgmtd -p /etc/ -w 2>&1)
+			rc=$?
+		fi
+	fi
+
+	if [ $rc != 0 ]; then
+		cl_format_error "$rc" "$msg"
+	else
+		printf '{"rc":%d}' $rc
+	fi
+
+	exit 0
+}
+
+cl_lock $LOCK_DIR
+
+if [ ".$1" = ".-g" ]; then
+	if [ "$2" = "gzip" ] && [ -n "$3" ]; then
+		do_cfg_get_gzip "$3"
+	fi
+fi
+
+if [ ".$1" = ".-s" ]; then
+	# diff data is taken from stdin pipe
+	if [ "$2" = "diff" ] && [ -n "$3" ] && [ -n "$4" ]; then
+		do_cfg_set_diff "$3" "$4"
+	elif [ "$2" = "gzip" ] && [ -n "$3" ] && [ -n "$4" ]; then
+		do_cfg_set_gzip "$3" "$4"
+	fi
+fi
+
+if [ ".$1" = ".-a" ]; then
+	if [ -n "$2" ]; then
+		do_cfg_apply "$2" "$3"
+	fi
+fi
+
+if [ ".$1" = ".-c" ]; then
+	if [ -n "$2" ]; then
+		do_cfg_commit "$2"
+	fi
+fi
+
+echo "Error: $0 called with unknown parameters ($*)"
+exit 1
+

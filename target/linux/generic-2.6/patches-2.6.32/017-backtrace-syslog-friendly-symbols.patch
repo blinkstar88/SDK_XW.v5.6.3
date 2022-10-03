@@ -1,0 +1,26 @@
+Index: linux-2.6.32.67/arch/mips/kernel/traps.c
+===================================================================
+--- linux-2.6.32.67.orig/arch/mips/kernel/traps.c
++++ linux-2.6.32.67/arch/mips/kernel/traps.c
+@@ -221,7 +221,7 @@ static void show_code(unsigned int __use
+ 			printk(" (Bad address in epc)\n");
+ 			break;
+ 		}
+-		printk("%c%0*x%c", (i?' ':'<'), pc16 ? 4 : 8, insn, (i?' ':'>'));
++		printk("%c%0*x%c", (i?' ':'['), pc16 ? 4 : 8, insn, (i?' ':']'));
+ 	}
+ }
+ 
+Index: linux-2.6.32.67/include/linux/kallsyms.h
+===================================================================
+--- linux-2.6.32.67.orig/include/linux/kallsyms.h
++++ linux-2.6.32.67/include/linux/kallsyms.h
+@@ -121,7 +121,7 @@ static inline void __deprecated print_fn
+ 
+ static inline void print_ip_sym(unsigned long ip)
+ {
+-	printk("[<%p>] %pS\n", (void *) ip, (void *) ip);
++	printk("[[%p]] %pS\n", (void *) ip, (void *) ip);
+ }
+ 
+ #endif /*_LINUX_KALLSYMS_H*/

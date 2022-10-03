@@ -1,0 +1,17 @@
+#!/bin/sh
+
+source /usr/etc/rc.d/rc.funcs
+
+fs() {
+	local SYSLOG_TAG=FileSystem
+	log_msg "${SYSLOG_TAG}" Start check...
+       	sqfsck /dev/mtd3
+	if [ ! $? -eq 0 ]; then 
+		log_msg "${SYSLOG_TAG}" Failed: $i
+		/bin/support /tmp/emerg /etc/persistent/emerg.supp emerg 1;
+	fi 
+	sysctl -w vm.drop_caches=3 2>&1 > /dev/null
+	log_msg "${SYSLOG_TAG}" End check.
+}
+
+fs

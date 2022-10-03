@@ -1,0 +1,5 @@
+#!/bin/sh
+
+echo "Warning! Error A12: Device is detected as counterfeit!"
+
+/bin/sh -l

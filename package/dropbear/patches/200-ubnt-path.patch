@@ -1,0 +1,40 @@
+--- a/options.h
++++ b/options.h
+@@ -30,14 +30,18 @@
+ #endif
+ #ifndef RSA_PRIV_FILENAME
+ #define RSA_PRIV_FILENAME "/etc/dropbear/dropbear_rsa_host_key"
+ #endif
+ #ifndef ECDSA_PRIV_FILENAME
+ #define ECDSA_PRIV_FILENAME "/etc/dropbear/dropbear_ecdsa_host_key"
+ #endif
++#ifndef AUTHORIZED_KEYS
++#define AUTHORIZED_KEYS "/etc/dropbear/authorized_keys"
++#endif
++
+ 
+ /* Set NON_INETD_MODE if you require daemon functionality (ie Dropbear listens
+  * on chosen ports and keeps accepting connections. This is the default.
+  *
+  * Set INETD_MODE if you want to be able to run Dropbear with inetd (or
+  * similar), where it will use stdin/stdout for connections, and each process
+  * lasts for a single connection. Dropbear should be invoked with the -i flag
+--- a/svr-authpubkey.c
++++ b/svr-authpubkey.c
+@@ -210,15 +210,15 @@ static int checkpubkey(unsigned char* al
+ 	filename = m_malloc(len + 22);
+ 	snprintf(filename, len + 22, "%s/.ssh/authorized_keys", 
+ 				ses.authstate.pw_dir);
+ 
+ 	/* open the file */
+ 	authfile = fopen(filename, "r");
+ 	if (authfile == NULL) {
+-		authfile = fopen("/etc/dropbear/authorized_keys","r");
++		authfile = fopen(AUTHORIZED_KEYS,"r");
+ 	}
+ 	if (authfile == NULL) {
+ 		goto out;
+ 	}
+ 	TRACE(("checkpubkey: opened authorized_keys OK"))
+ 
+ 	line = buf_new(MAX_AUTHKEYS_LINE);

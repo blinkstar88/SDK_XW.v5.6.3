@@ -1,0 +1,19 @@
+#!/bin/sh
+echo "{ \"brmacs\": ["
+for brsysfs in /sys/class/net/*/bridge
+do
+	local brpath=${brsysfs%/bridge}
+	local brifc=${brpath#/sys/class/net/}
+	local ports=$brpath/brif/*
+	local portsed=" "
+	for port in $ports
+	do
+		local no=$(printf "%d" $(cat $port/port_no))
+		portsed="$portsed;s/^ \\+$no/${port##*/}/g"
+	done
+	brctl showmacs "$brifc" | \
+		sed "$portsed" | \
+		awk -v br="$brifc" \
+		'{ if ($3 == "no") printf "{\"bridge\":\"%s\",\"port\":\"%s\",\"hwaddr\":\"%s\",\"ageing\":\"%s\"},", br, $1, $2, $4 }'
+done
+echo "null ]}"

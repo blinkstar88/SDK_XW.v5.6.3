@@ -1,0 +1,21 @@
+--- a/drivers/serial/8250.c
++++ b/drivers/serial/8250.c
+@@ -1220,14 +1220,18 @@ static void autoconfig(struct uart_8250_
+ 
+ #ifdef CONFIG_SERIAL_8250_AU1X00
+ 	/* if access method is AU, it is a 16550 with a quirk */
+ 	if (up->port.type == PORT_16550A && up->port.iotype == UPIO_AU)
+ 		up->bugs |= UART_BUG_NOMSR;
+ #endif
+ 
++#if defined(CONFIG_AR9100) || defined(CONFIG_MACH_AR7240)
++        up->bugs |= UART_BUG_NOMSR;
++#endif
++
+ 	serial_outp(up, UART_LCR, save_lcr);
+ 
+ 	if (up->capabilities != uart_config[up->port.type].flags) {
+ 		printk(KERN_WARNING
+ 		       "ttyS%d: detected caps %08x should be %08x\n",
+ 		       serial_index(&up->port), up->capabilities,
+ 		       uart_config[up->port.type].flags);

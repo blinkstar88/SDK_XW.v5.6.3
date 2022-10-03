@@ -1,0 +1,532 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html>
+<head>
+
+<title><? echo get_title($cfg, dict_translate("Ubiquiti")); ></title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="Pragma" content="no-cache">
+<link rel="shortcut icon" href="FULL_VERSION_LINK/favicon.ico" >
+<link href="FULL_VERSION_LINK/style.css" rel="stylesheet" type="text/css">
+<link href="FULL_VERSION_LINK/jquery-ui.css" rel="stylesheet" type="text/css">
+<link href="FULL_VERSION_LINK/help.css" rel="stylesheet" type="text/css">
+<script type="text/javascript" language="javascript" src="jsl10n.cgi?l=<? echo $ui_language; >&v=FULL_VERSION_LINK"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/util.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/slink.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/jsval.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.utils.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.cookie.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/js/jquery.ui.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/network.js"></script>
+<script type="text/javascript" src="FULL_VERSION_LINK/help.js"></script>
+
+<script type="text/javascript" language="javascript">
+<?
+if ($radio1_ieee_mode_a == 1 && $radio1_ieee_mode_bg == 0) {
+	if ($ieee_mode != "at" && $ieee_mode != "ast" && $ieee_mode != "a") {
+		$ieee_mode = "a";
+	}
+} elseif ($radio1_ieee_mode_bg == 1 && $radio1_ieee_mode_a == 0) {
+	if ($ieee_mode != "b" && $ieee_mode != "g" && $ieee_mode != "pureg") {
+		$ieee_mode = "g";
+	}
+}
+
+init_board_inc($wlan_iface);
+generate_js_regdomain($country, "full_regdomain", $radio["devdomain"], $radio["regdomain_flags"], $radio["chanbw"]);
+>
+var fixer = new ieee_mode_fixer("<?echo $ieee_mode>".toLowerCase(), "<?echo $chanbw>");
+var ieee_mode = fixer.getIEEEMode();
+var chanbw = fixer.getChanBW();
+var airmax=<? if ($polling == "enabled" || $wmode_type == 1) { echo 1; } else { echo 0; } >;
+var country = "<?echo $country>";
+var obey = '<? echo $obey_regulatory_status; >' == 'enabled';
+var rg_data = parse_full_regdomain(full_regdomain);
+var regdomain = rg_data.regdomain;
+var airsync_up_slot = <? echo $airsync_up_slot; ?>;
+var airsync_down_slot = <? echo $airsync_down_slot; ?>;
+var is_ap = '<? echo $wmode_type; >' == '2';
+var board_fcc_unii_enabled = <? if ($board_fcc_unii_lock_state == $lock_state_new_grant) { echo "true"; } else { echo "false"; }>;
+var wmode = "<?echo $cfgwmode>";
+var unii_on = (board_fcc_unii_enabled && wmode == 'aprepeater');
+
+var globals = {
+	chanbw : <? echo $radio1_chanbw; >,
+	supported_chanbw : "<? echo $radio["chanbw"]; >",
+	i18n : { ht40_label : '<? if ($wmode_type == 1) { >Auto 20/<? } >40 MHz' }
+};
+
+var airsyncSlotMap = {
+	0: [2000, 4000],
+	5: [8000, 8000],
+	8: [4000, 4000],
+	10: [4000, 4000],
+	20: [4000, 4000],
+	30: [4000, 4000],
+	40: [2000, 2000]
+};
+
+var chanWidth = getChanWidth();
+if (airsyncSlotMap[chanWidth]) {
+	var defaultAirsyncSlots = airsyncSlotMap[chanWidth];
+} else {
+	var defaultAirsyncSlots = airsyncSlotMap[0];
+}
+
+<? gen_update_check($cfg); >
+
+$(document).ready(function() {
+	$('#av_launcher').click(function() { openPage('airview.cgi', 700, 360); });
+	$('#airmaxpri').val("<? echo $airmaxpri; >");
+	$('#airsync_mode').val("<? echo $airsync_mode; >");
+	$("#polling_show_warnning").val(false);
+	$("#polling_channels_count").val(0);
+
+	$("#polling").change(onTogglePolling).change();
+	$("#airsync_mode, #airsync_slot_override").change(updateAirSync);
+	$("#airsync_status").change(function() {
+		updateAirSync();
+		xorCheck("#airsync_status", "#polling_airselect", onToggleAirSelect);
+	});
+
+	$("#polling_airselect").change(function() {
+		onToggleAirSelect();
+		xorCheck("#polling_airselect", "#airsync_status", updateAirSync);
+	}).change();
+
+	$('#ubnt_form').submit(function() {
+		var ubnt_form = $(this);
+		$('.airsel_val').each(function(index) {
+			if ($(this).is(':disabled')){
+				addPostVar(ubnt_form, $(this).attr('name'), $(this).val());
+			}
+		});
+		updateFrequencyList(true);
+		return true;
+        });
+	updateFrequencyList(false);
+
+	if (airsync_up_slot == 0) {
+		$('#airsync_up_slot').val(defaultAirsyncSlots[0]);
+	}
+
+	if (airsync_down_slot == 0) {
+		$('#airsync_down_slot').val(defaultAirsyncSlots[1]);
+	}
+
+	fwUpdateCheck(false, fw_check);
+	security.check();
+	validateDfsChansUbnt('<? echo $dfs_status; >', '<? echo $wmode_type; >' == '1', '<? echo $devdomain; >');
+});
+
+function updateFrequencyList(submit){
+	var value = $('#polling_airselect_channels').val();
+	var scan_channels = get_current_scan_channels(value);
+	if (scan_channels.length > 0) {
+		var all_channels = get_scan_channels(regdomain, ieee_mode, globals.chanbw, airmax, obey, false);
+		var new_channels = [], i;
+		for (i = 0; i < scan_channels.length; ++i)
+		{
+			if ($.inArray(scan_channels[i], all_channels) != -1)
+				new_channels.push(scan_channels[i]);
+		}
+		var new_val = new_channels.join(',');
+
+		if (value != new_val){
+			if (submit)
+				$("#polling_show_warnning").val(true);
+			else
+				$('#polling_airselect_channels').val(new_val);
+		}
+		if (!submit)
+			$("#polling_channels_count").val(new_val.split(",").length);
+	}
+}
+
+function addPostVar(form, name, value) {
+	form.append('<input type="hidden" name="' + name + '" value="' + value + '"/>');
+}
+
+function onTogglePolling() {
+	var airmax_only = <?if ($radio1_caps & $radio_cap_airmax_only) { echo "true"; } else { echo "false"; } >;
+	var polling_on = $('#polling').is(':checked');
+	var airselect_on = $('#polling_airselect').is(':checked');
+
+	$('#polling_noack').enable(polling_on);
+	$('#polling_airselect').enable(polling_on);
+	$('.airsel_ctrl').enable(polling_on && airselect_on);
+	$('.airsel_row').toggle(polling_on && airselect_on);
+	airmax = polling_on ? 1 : 0;
+	updateAirSync();
+}
+
+function onToggleNoAck() {
+	$("#polling_noack_value").val(
+		$('#polling_noack').is(':checked') ? "1" : "0");
+}
+
+function onToggleAirSelect() {
+	var polling_on = $('#polling').is(':checked');
+	var airselect_on = $('#polling_airselect').is(':checked');
+	$("#polling_airselect_value").val(airselect_on ? "1" : "0");
+	$('.airsel_ctrl').enable(polling_on && airselect_on);
+	$('.airsel_row').toggle(polling_on && airselect_on);
+}
+
+function updateAirSync() {
+	var polling_on = $('#polling').is(':checked');
+	var airsync_on = $('#airsync_status').is(':checked');
+	var show_airsync = polling_on && airsync_on;
+
+	$('#polling_noack').enable(polling_on && !show_airsync);
+	$('#airsync_status').enable(polling_on);
+	$('.airsync_row').toggle(show_airsync);
+	if (show_airsync) {
+		var master = ($('#airsync_mode option:selected').val() == 1);
+		var slot_override = master && $('#airsync_slot_override').is(':checked');
+		$('.airsync_master_row').toggle(master);
+		$('.airsync_slave_row').toggle(!master);
+		$('.airsync_slot_row input').prop('disabled', !slot_override);
+	}
+	if(!polling_on || show_airsync){
+		$('#polling_noack').prop('checked', false);
+		$("#polling_noack_value").val("0");
+
+	}
+}
+
+function validateHopInterval(id,name,value) {
+	var val = $('#polling_airselect_interval').val(),
+	    hopInterval = parseInt(val);
+	if (!/^\d+$/.test(val))
+		return false;
+	return !isNaN(hopInterval) && hopInterval == 0 || hopInterval >= 300;
+}
+
+function validateFrequencyList(id, name, value) {
+	if (!$('#polling_airselect').is(':checked'))
+		return true;
+
+	var scan_channels = get_current_scan_channels(value);
+	var all_channels = get_scan_channels(regdomain, ieee_mode, globals.chanbw, airmax, obey, is_ap);
+	return validateChannels(all_channels, scan_channels);
+}
+
+function validateAirSyncSlot(id, name, value) {
+	if (!$('#' + id).is(":visible"))
+		return true;
+
+	var val = parseInt(value);
+	return (val >= 500 && val <= 12000);
+}
+
+function xorCheck(id1, id2, handler) {
+	var item2 = $(id2);
+	if ($(id1).is(":checked") && item2.is(":checked")) {
+		item2.removeAttr("checked");
+		handler();
+	}
+}
+
+function doSubmit() {
+	$('#ubnt_form').submit();
+}
+
+function getChanWidth() {
+	var mode = getRegdomainMode(ieee_mode);
+	if (!regdomain[mode])
+		return 0;
+
+	var availableWidths = getChannelWidths(globals.supported_chanbw);
+	var res = 0;
+	$.each(availableWidths,
+		function(idx, val) {
+			if (regdomain[mode][chanbw] && (val.width == chanbw) && (val.cfg == globals.chanbw)) {
+				res =  val.width;
+			}
+		}
+	);
+
+	return res;
+}
+
+</script>
+</head>
+
+<? flush(); >
+
+<body>
+<table class="maintable" cellpadding="0" align="center" cellspacing="0"><? $top_tab = "ubnt"; include("lib/head.tmpl");>
+<tr>
+	<td colspan="2" class="centr">
+		<?
+			if (cfg_is_modified($cfg_file)) {
+				include("lib/modified.tmpl");
+				if ($show_warn == 1) {
+					include("lib/warn-link.tmpl");
+				}
+				if ($show_warn == 2) {
+					include("lib/warn-frq-list.tmpl");
+				}
+			}
+                        if (show_emerg()) { include("lib/warn-emerg.tmpl"); }
+			include("lib/error.tmpl");
+		>
+	<br>
+<form id="ubnt_form" enctype="multipart/form-data" action="ubnt.cgi" method="POST" onSubmit="return validateStandard(this, 'error');">
+<table border="0" cellspacing="0" cellpadding="0" class="linktable">
+	<tr>
+		<th style="width: 50%;"><? echo dict_translate("airMAX Settings"); >:</th>
+		<td>&nbsp;</td>
+		<? if ($feature_airview == 1 && $is_ro == 0) { >
+		<th style="width: 50%;"><? echo dict_translate("airView"); ></th>
+		<? } >
+	</tr>
+	<tr>
+		<!-- airMAX Settings -->
+		<td align="center" valign="top">
+			<table class="cfgtable"	cellspacing="0" cellpadding="0">
+					<? if ($wmode_type == 2) { >
+						<tr>
+							<td class="f cfg_width"><? echo dict_translate("airMAX"); >:
+								<span class="help"><a href="<? echo localize_help("airmax.html");>" rel="help">[?]</a></span>
+							</td>
+							<td class="f-left">
+								<input type="checkbox" id="polling" name="polling" value="enabled"
+									onclick="validateDfsChansUbnt('<? echo $dfs_status; >', '<? echo $wmode_type; >' == '1', '<? echo $devdomain; >');"
+									<?if ($polling == "enabled") { echo "checked"; }>
+									<?if ($radio1_caps & $radio_cap_airmax_only) { echo "disabled"; }>
+								/> <label class="f" for="pwdogStatus"><? echo dict_translate("Enable"); ></label>
+
+								<input type="hidden" id="polling_show_warnning" name="polling_show_warnning" value="<? echo $polling_show_warnning >" />
+								<input type="hidden" id="polling_channels_count" name="polling_channels_count" value="<? echo $polling_channels_count >" />
+							</td>
+						</tr>
+						<tr>
+							<td class="f cfg_width">
+								<? echo dict_translate("Long Range PtP Link Mode"); >:
+								<span class="help"><a href="<? echo localize_help("ptpnoack.html");>" rel="help">[?]</a></span>
+							</td>
+							<td class="f-left">
+								<input type="checkbox" id="polling_noack" name="polling_noack" onClick = "onToggleNoAck();" value="1"
+									<?if ($polling_noack == "1") { echo "checked"; }>
+									<?if ($radio1_caps & $radio_cap_airmax_only) { echo "enabled"; }>
+								/>
+								<input type="hidden" id="polling_noack_value" name="polling_noack_value" value="<? echo $polling_noack >" />
+							</td>
+						</tr>
+						<tr>
+							<td colspan="2" class="tdpad">&nbsp;</td>
+						</tr>
+					<? } >
+					<? if ($wmode_type == 1) { >
+						<tr>
+							<td class="f cfg_width"><? echo dict_translate("airMAX Priority");>:
+							<span class="help"><a href="<? echo localize_help("airmaxpri.html");>" rel="help">[?]</a></span>
+							</td>
+							<td style="white-space: nowrap;">
+								<select id="airmaxpri" name="airmaxpri" realname="<? echo dict_translate("airMAX Priority"); >:">
+									<option value="0">High</option>
+									<option value="1">Medium</option>
+									<option value="2">Low</option>
+									<option value="3">None</option>
+								</select>
+							</td>
+						</tr>
+					<? } >
+			</table>
+		</td>
+		<td>&nbsp;</td>
+		<!-- airView Settings -->
+		<? if ($feature_airview == 1 && $is_ro == 0) { >
+		<td align="center" valign="top">
+			<table class="cfgtable"	cellspacing="0" cellpadding="0">
+				<tr>
+					<td class="f cfg_width"><? echo dict_translate("airView Port"); >: <span class="help"><a href="<? echo localize_help("airviewprt.html");>" rel="help">[?]</a></span></td>
+					<td>
+						<input type="text" class="config std_width" maxlength="5" size="5"
+							id="av_tcp_port" name="av_tcp_port"
+							value="<? echo $av_tcp_port;>" req="1" maxvalue="65535" minvalue="1"
+							realname="<? echo dict_translate("airView Port");>">
+					</td>
+				</tr>
+				<tr>
+					<td align="right" valign="middle">
+						<a id="av_launcher" href="#">
+							<img height="16" width="16" src="FULL_VERSION_LINK/images/airview_32.png" border="0" align="top"/>
+							<? echo dict_translate("Launch airView"); > <span class="help"><a href="<? echo localize_help("airview.html");>" rel="help">[?]</a></span>
+						</a>
+					</td>
+					<td>
+					</td>
+				</tr>
+			</table>
+		</td>
+		<? } >
+	</tr>
+
+	<tr><td colspan="3" class="tdpad">&nbsp;</td></tr>
+	<tr>
+		<? if ($wmode_type == 2) { echo "<th>"+dict_translate("airSelect")+"</th>"; } else { echo "<td>&nbsp;</td>"; } ></th>
+		<td>&nbsp;</td>
+		<td><!---th><? echo dict_translate("airControl"); ></th--->&nbsp;</td>
+	</tr>
+	<tr>
+		<!-- airSelect Settings -->
+		<td align="center" valign="top">
+			<table class="cfgtable"	cellspacing="0" cellpadding="0">
+					<? if ($wmode_type == 2) { >
+						<tr>
+							<td class="f cfg_width"><? echo dict_translate("airSelect"); >: <span class="help"><a href="<? echo localize_help("airselect.html");>" rel="help">[?]</a></span></td>
+							<td class="f-left">
+								<input type="checkbox"
+									id="polling_airselect" name="polling_airselect" onclick="validateDfsChansUbnt('<? echo $dfs_status; >', '<? echo $wmode_type; >' == '1', '<? echo $devdomain; >');"
+									<?if ($polling_airselect == "1") { echo "checked"; }>
+								/> <label class="f" for="pwdogStatus"><? echo dict_translate("Enable"); ></label>
+								<input type="hidden" id="polling_airselect_value"
+									name="polling_airselect_value" value="<? echo $polling_airselect >" />
+							</td>
+						</tr>
+						<tr class="airsel_row">
+							<td class="f cfg_width"><? echo dict_translate("Frequency List, MHz"); >: <span class="help"><a href="<? echo localize_help("airselectflist.html");>" rel="help">[?]</a></span></td>
+							<td class="f-left">
+								<input type="text" class="config airsel_val airsel_ctrl"
+									id="polling_airselect_channels" name="polling_airselect_channels"
+									value="<? echo $polling_airselect_channels;>" req="1"
+									callback="validateFrequencyList"
+									realname="<? echo dict_translate("airSelect Frequency List");>">
+								<input type="button" class="airsel_ctrl"
+									id="edit_polling_airselect_channels" name="edit_polling_airselect_channels"
+									onClick="openScanChannelSelectUbnt('polling_airselect_channels','<? echo $hideindoor; >', '<? echo $dfs_status; >', '<? echo $devdomain; >');"
+									value="<? echo dict_translate("Edit"); >...">
+							</td>
+						</tr>
+						<tr class="airsel_row">
+							<td class="f cfg_width"><? echo dict_translate("Hop Interval"); >: <span class="help"><a href="<? echo localize_help("airselecthopint.html");>" rel="help">[?]</a></span></td>
+							<td class="f-left">
+								<input type="text" class="std_width airsel_val airsel_ctrl" size="5"
+									id="polling_airselect_interval" name="polling_airselect_interval"
+									value="<? echo $polling_airselect_interval;>" req="1" callback="validateHopInterval"
+									realname="<? echo dict_translate("airSelect Hop Interval");> [0, 300-65535]" >&nbsp;miliseconds
+							</td>
+						</tr>
+						<tr class="airsel_row">
+							<td class="f cfg_width"><? echo dict_translate("Announce Count"); >: <span class="help"><a href="<? echo localize_help("airselectacount.html");>" rel="help">[?]</a></span></td>
+							<td class="f-left">
+								<input type="text" class="std_width airsel_val airsel_ctrl" size="5"
+									id="polling_airselect_announce_cnt" name="polling_airselect_announce_cnt"
+									value="<? echo $polling_airselect_announce_cnt;>" req="1" minValue="10" maxValue="65535"
+									realname="<? echo dict_translate("airSelect Announcement Count");> [10-65535]">
+							</td>
+						</tr>
+						<tr>
+							<td colspan="2" class="tdpad">&nbsp;</td>
+						</tr>
+					<? } >
+			</table>
+		</td>
+		<td>&nbsp;</td>
+	</tr>
+
+<? if ($wmode_type == 2 && $feature_gps == 1) { >
+	<tr><td colspan="3" class="tdpad">&nbsp;</td></tr>
+	<tr>
+		<th><? echo dict_translate("airSync"); ></th>
+		<td>&nbsp;</td>
+	</tr>
+	<tr>
+		<!-- airSync Settings -->
+		<td align="center" valign="top">
+			<table class="cfgtable"	cellspacing="0" cellpadding="0">
+				<tr>
+					<td class="f cfg_width"><? echo dict_translate("Enable airSync"); >: <span class="help"><a href="<? echo localize_help("airsync.html");>" rel="help">[?]</a></span></td>
+					<td class="f-left">
+						<input type="checkbox" id="airsync_status" name="airsync_status"
+						<? if ($airsync_status == "enabled") { echo "checked"; }> >
+					</td>
+				</tr>
+				<tr class="airsync_row">
+					<td class="f cfg_width"><? echo dict_translate("Mode"); >: <span class="help"><a href="<? echo localize_help("airsyncmode.html");>" rel="help">[?]</a></span></td>
+					<td class="f-left">
+						<select id="airsync_mode" name="airsync_mode">
+							<option value="1"><? echo dict_translate("Master"); ></option>
+							<option value="2"><? echo dict_translate("Slave"); ></option>
+						</select>
+					</td>
+				</tr>
+				<tr class="airsync_row">
+					<td class="f cfg_width"><? echo dict_translate("Port"); >: <span class="help"><a href="<? echo localize_help("airsyncport.html");>" rel="help">[?]</a></span></td>
+					<td class="f-left">
+						<input type="text" class="config std_width" maxlength="5" size="5"
+							id="airsync_port" name="airsync_port"
+							value="<? echo $airsync_port;>" req="1" callback="validatePort"
+							realname="<? echo dict_translate("airSync Port");> [1-65535]">
+					</td>
+				</tr>
+				<tr class="airsync_row airsync_slave_row">
+					<td class="f cfg_width"><? echo dict_translate("Master IP"); >: <span class="help"><a href="<? echo localize_help("airsyncmasterip.html");>" rel="help">[?]</a></span></td>
+					<td class="f-left">
+						<input type="text" class="config" size="5" style="width: 145px;"
+							id="airsync_master" name="airsync_master"
+							value="<? echo $airsync_master;>" req="1" callback="validateAirsyncIP"
+							realname="<? echo dict_translate("airSync Master IP");>" >
+					</td>
+				</tr>
+				<tr class="airsync_row airsync_master_row">
+					<td class="f"><? echo dict_translate("Timing Override"); >: <span class="help"><a href="<? echo localize_help("airsynctimingovr.html");>" rel="help">[?]</a></span></td>
+					<td class="f-left">
+						<input type="checkbox"
+							id="airsync_slot_override" name="airsync_slot_override"
+							<? if ($airsync_slot_override == "enabled") { echo "checked"; } > />
+					</td>
+				</tr>
+				<tr class="airsync_row airsync_slot_row">
+					<td class="f"><? echo dict_translate("Down Slot"); >:</td>
+					<td class="f-left">
+						<input type="text" class="config std_width" maxlength="5" size="5"
+							id="airsync_down_slot" name="airsync_down_slot"
+							value="<? echo $airsync_down_slot;>" req="1" callback="validateAirSyncSlot"
+							realname="<? echo dict_translate("airSync Down Slot");> [500-12000]">&nbsp;μs
+					</td>
+				</tr>
+				<tr class="airsync_row airsync_slot_row">
+					<td class="f"><? echo dict_translate("Up Slot"); >:</td>
+						<td class="f-left">
+							<input type="text" class="config std_width" maxlength="5" size="5"
+								id="airsync_up_slot" name="airsync_up_slot"
+								value="<? echo $airsync_up_slot;>" req="1" callback="validateAirSyncSlot"
+								realname="<? echo dict_translate("airSync Up Slot");> [500-12000]">&nbsp;μs
+					</td>
+				</tr>
+				<tr>
+					<td colspan="2" class="tdpad">&nbsp;</td>
+				</tr>
+			</table>
+		</td>
+		<td>&nbsp;</td>
+	</tr>
+<? } >
+	<tr>
+		<td colspan="3" class="tdpad">&nbsp;</td>
+	</tr>
+	<tr>
+		<td colspan="3" class="change"><input type="submit" value="<? echo dict_translate("Change"); >" /></td>
+	</tr>
+</table>
+</form>
+</td>
+</tr>
+  <tr>
+   <td colspan="2">
+      <table cellpadding="0" align="center" cellspacing="0" width="100%">
+      <tr>
+	<td height="10" class="footlogo"><img src="/glogo.cgi" border="0"></td>
+	<td height="10" class="foottext"><? echo dict_translate($oem_copyright); ></td>
+      </tr>
+      </table>
+   </td>
+  </tr>
+</table>
+
+</body>
+</html>

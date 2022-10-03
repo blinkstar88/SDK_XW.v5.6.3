@@ -1,0 +1,124 @@
+#!/bin/sh
+
+. /lib/ubnt/cl_functions.sh
+
+LOCK_DIR="/tmp/fwupdate_cl.lock"
+FWUPDATE="/usr/bin/fwupdate"
+FW_FILE="/tmp/fwupdate.bin"
+CMD_BGND="/usr/bin/bgnd"
+PROGRESS_FILE="/tmp/.progress"
+PROGRESS_SEC_DEF=5
+
+do_download() {
+
+	local fw_url="$1"
+	local fw_progress_sec="$2"
+	local fw_checksum="$3"
+
+	local rc=0
+	local msg=
+
+	if [ -z "$fw_url" ]; then
+		rc=100
+		msg="Download URL is empty!"
+
+	elif [ -z "$fw_progress_sec" ] || ! [ "$fw_progress_sec" -eq "$fw_progress_sec" 2>/dev/null ]; then
+		rc=101
+		msg="Progress interval is not present or not number!"
+
+	else
+		rm -f $FW_FILE
+		rm -f $PROGRESS_FILE
+
+		if [ $fw_progress_sec -eq 0 ]; then
+			fw_progress_sec=$PROGRESS_SEC_DEF
+		fi
+
+		wget -O $FW_FILE "$fw_url" >$PROGRESS_FILE 2>&1 &
+		pid=$!
+		progress=0
+		while kill -0 $pid 2> /dev/null; do
+			sleep 1
+			if [ $fw_progress_sec -gt 0 ]; then
+				if [ $progress -eq 0 ]; then
+					msg=$(sed 's/^M$//' $PROGRESS_FILE | tail -n 1 | sed -n 's/^.*\ \([0-9]\+\)% |[ \*]*| *\([0-9]\+[ kMGTPEZY]\).*$/{\"percent\": \1, \"bytes\": \"\2\"}\n/p')
+					if [ -n "$msg" ]; then
+						printf '%s\r\n\r\n' "$msg"
+					fi
+					progress=$(($fw_progress_sec-1))
+				else
+					progress=$(($progress-1))
+				fi
+			fi
+		done
+
+		wait $pid
+		rc=$?
+		if [ $rc != 0 ]; then
+			msg=$(cat $PROGRESS_FILE)
+		fi
+		rm -f $PROGRESS_FILE
+
+		if [ $rc == 0 ] && [ -n "$fw_checksum" ]; then
+			dl_checksum=$(cl_md5sum $FW_FILE)
+			if [ "$dl_checksum" != "$fw_checksum" ]; then
+				rm -f $FW_FILE
+				rc=102
+				msg="Firmware checksum failed ($dl_checksum)!"
+			fi
+		fi
+	fi
+
+	if [ $rc != 0 ]; then
+		cl_format_error "$rc" "$msg"
+	else
+		printf '{"rc":%d}' $rc
+	fi
+
+	exit 0
+}
+
+
+do_start() {
+
+	local rc=0
+	local msg=
+	local duration=0
+
+	if [ ! -f $FW_FILE ]; then
+		rc=100
+		msg="Firmware update file ($FW_FILE) does not exist!"
+	
+	else
+		msg=$($FWUPDATE -c 2>&1)
+		rc=$?
+		if [ $rc != 0 ]; then
+			msg="Firmware update file check failed! Reason: $msg"
+
+		else
+			duration=$(cl_get_board_int "board.upgrade")
+			duration=$(($duration + $SLEEP_TIME))
+			printf '{"rc":%d,"duration":%d}' $rc $duration
+			cl_close_pipes
+			$CMD_BGND -r fwupdate -- /bin/sh -c "sleep $SLEEP_TIME; $FWUPDATE -m"
+			exit 0
+		fi
+	fi
+
+	cl_format_error "$rc" "$msg"
+
+	exit 0
+}
+
+cl_lock $LOCK_DIR
+
+if [ ".$1" = ".-d" ]; then
+	do_download "$2" "$3" "$4"
+fi
+
+if [ ".$1" = ".-s" ]; then
+	do_start
+fi
+
+echo "Error: $0 called with unknown parameters ($*)"
+exit 1

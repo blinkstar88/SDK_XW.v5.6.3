@@ -1,0 +1,182 @@
+--- a/sysklogd/syslogd.c
++++ b/sysklogd/syslogd.c
+@@ -70,14 +70,15 @@ USE_FEATURE_ROTATE_LOGFILE( \
+ 	unsigned logFileRotate;                 \
+ 	unsigned curFileSize;                   \
+ 	smallint isRegular;                     \
+ ) \
+ USE_FEATURE_REMOTE_LOG( \
+ 	/* udp socket for remote logging */     \
+ 	int remoteFD;                           \
++	int tcp;                           \
+ 	len_and_sockaddr* remoteAddr;           \
+ ) \
+ USE_FEATURE_IPC_SYSLOG( \
+ 	int shmid; /* ipc shared memory id */   \
+ 	int s_semid; /* ipc semaphore id */     \
+ 	int shm_size;                           \
+ 	struct sembuf SMwup[1];                 \
+@@ -123,14 +124,15 @@ static const struct init_globals init_da
+ 	.logLevel = 8,
+ #if ENABLE_FEATURE_ROTATE_LOGFILE
+ 	.logFileSize = 200 * 1024,
+ 	.logFileRotate = 1,
+ #endif
+ #if ENABLE_FEATURE_REMOTE_LOG
+ 	.remoteFD = -1,
++	.tcp = 0,
+ #endif
+ #if ENABLE_FEATURE_IPC_SYSLOG
+ 	.shmid = -1,
+ 	.s_semid = -1,
+ 	.shm_size = ((CONFIG_FEATURE_IPC_SYSLOG_BUFFER_SIZE)*1024), // default shm size
+ 	.SMwup = { {1, -1, IPC_NOWAIT} },
+ 	.SMwdn = { {0, 0}, {1, 0}, {1, +1} },
+@@ -150,34 +152,37 @@ enum {
+ 	OPTBIT_outfile, // -O
+ 	OPTBIT_loglevel, // -l
+ 	OPTBIT_small, // -S
+ 	USE_FEATURE_ROTATE_LOGFILE(OPTBIT_filesize   ,)	// -s
+ 	USE_FEATURE_ROTATE_LOGFILE(OPTBIT_rotatecnt  ,)	// -b
+ 	USE_FEATURE_REMOTE_LOG(    OPTBIT_remote     ,)	// -R
+ 	USE_FEATURE_REMOTE_LOG(    OPTBIT_locallog   ,)	// -L
++	USE_FEATURE_REMOTE_LOG(    OPTBIT_tcp   ,)	// -t
+ 	USE_FEATURE_IPC_SYSLOG(    OPTBIT_circularlog,)	// -C
+ 	USE_FEATURE_SYSLOGD_DUP(   OPTBIT_dup        ,)	// -D
+ 
+ 	OPT_mark        = 1 << OPTBIT_mark    ,
+ 	OPT_nofork      = 1 << OPTBIT_nofork  ,
+ 	OPT_outfile     = 1 << OPTBIT_outfile ,
+ 	OPT_loglevel    = 1 << OPTBIT_loglevel,
+ 	OPT_small       = 1 << OPTBIT_small   ,
+ 	OPT_filesize    = USE_FEATURE_ROTATE_LOGFILE((1 << OPTBIT_filesize   )) + 0,
+ 	OPT_rotatecnt   = USE_FEATURE_ROTATE_LOGFILE((1 << OPTBIT_rotatecnt  )) + 0,
+ 	OPT_remotelog   = USE_FEATURE_REMOTE_LOG(    (1 << OPTBIT_remote     )) + 0,
+ 	OPT_locallog    = USE_FEATURE_REMOTE_LOG(    (1 << OPTBIT_locallog   )) + 0,
++	OPT_tcp		= USE_FEATURE_REMOTE_LOG(    (1 << OPTBIT_tcp	     )) + 0,
+ 	OPT_circularlog = USE_FEATURE_IPC_SYSLOG(    (1 << OPTBIT_circularlog)) + 0,
+ 	OPT_dup         = USE_FEATURE_SYSLOGD_DUP(   (1 << OPTBIT_dup        )) + 0,
+ };
+ #define OPTION_STR "m:nO:l:S" \
+ 	USE_FEATURE_ROTATE_LOGFILE("s:" ) \
+ 	USE_FEATURE_ROTATE_LOGFILE("b:" ) \
+ 	USE_FEATURE_REMOTE_LOG(    "R:" ) \
+ 	USE_FEATURE_REMOTE_LOG(    "L"  ) \
++	USE_FEATURE_REMOTE_LOG(    "t"  ) \
+ 	USE_FEATURE_IPC_SYSLOG(    "C::") \
+ 	USE_FEATURE_SYSLOGD_DUP(   "D"  )
+ #define OPTION_DECL *opt_m, *opt_l \
+ 	USE_FEATURE_ROTATE_LOGFILE(,*opt_s) \
+ 	USE_FEATURE_ROTATE_LOGFILE(,*opt_b) \
+ 	USE_FEATURE_IPC_SYSLOG(    ,*opt_C = NULL)
+ #define OPTION_PARAM &opt_m, &G.logFilePath, &opt_l \
+@@ -283,15 +288,14 @@ static void log_to_shmem(const char *msg
+ }
+ #else
+ void ipcsyslog_cleanup(void);
+ void ipcsyslog_init(void);
+ void log_to_shmem(const char *msg);
+ #endif /* FEATURE_IPC_SYSLOG */
+ 
+-
+ /* Print a message to the log file. */
+ static void log_locally(time_t now, char *msg)
+ {
+ 	struct flock fl;
+ 	int len = strlen(msg);
+ 
+ #if ENABLE_FEATURE_IPC_SYSLOG
+@@ -522,26 +526,52 @@ static NOINLINE int create_socket(void)
+ 
+ 	return sock_fd;
+ }
+ 
+ #if ENABLE_FEATURE_REMOTE_LOG
+ static int try_to_resolve_remote(void)
+ {
++	int fd = 0;
++
+ 	if (!G.remoteAddr) {
+ 		unsigned now = monotonic_sec();
+ 
+ 		/* Don't resolve name too often - DNS timeouts can be big */
+ 		if ((now - G.last_dns_resolve) < DNS_WAIT_SEC)
+ 			return -1;
+ 		G.last_dns_resolve = now;
+ 		G.remoteAddr = host2sockaddr(G.remoteAddrStr, 514);
+ 		if (!G.remoteAddr)
+ 			return -1;
+ 	}
+-	return socket(G.remoteAddr->u.sa.sa_family, SOCK_DGRAM, 0);
++        if (!G.tcp)
++            	return socket(G.remoteAddr->u.sa.sa_family, SOCK_DGRAM, 0);
++
++        fd = xsocket(G.remoteAddr->u.sa.sa_family, SOCK_STREAM, 0);
++ 	if (connect(fd, &G.remoteAddr->u.sa, G.remoteAddr->len) < 0) {
++            	close(fd);
++                fd = -1;
++                if (G.remoteAddr->u.sa.sa_family == AF_INET) {
++                    char buf[255];
++                    snprintf(buf,255,"%s %s","syslogd can't connect to remote loghost",inet_ntoa(G.remoteAddr->u.sin.sin_addr));
++                    timestamp_and_log_internal(buf);
++                }
++                timestamp_and_log_internal("connection to remote loghost failed");
++        }
++        return fd;
++}
++
++static void handle_send(int err) {
++    switch (err) {
++    case ECONNRESET:
++    case ENOTCONN: /* paranoia */
++    case EPIPE:
++        close(G.remoteFD);
++        G.remoteFD = -1;
++    }
+ }
+ #endif
+ 
+ static void do_syslogd(void) ATTRIBUTE_NORETURN;
+ static void do_syslogd(void)
+ {
+ 	int sock_fd;
+@@ -620,16 +650,20 @@ static void do_syslogd(void)
+ 			}
+ 			/* Stock syslogd sends it '\n'-terminated
+ 			 * over network, mimic that */
+ 			recvbuf[sz] = '\n';
+ 			/* send message to remote logger, ignore possible error */
+ 			/* TODO: on some errors, close and set G.remoteFD to -1
+ 			 * so that DNS resolution and connect is retried? */
+-			sendto(G.remoteFD, recvbuf, sz+1, MSG_DONTWAIT,
+-				    &G.remoteAddr->u.sa, G.remoteAddr->len);
++                        if (!G.tcp) {
++                            if (sendto(G.remoteFD, recvbuf, sz+1, MSG_DONTWAIT | MSG_NOSIGNAL,
++				    &G.remoteAddr->u.sa, G.remoteAddr->len) == -1)
++                                handle_send(errno);
++                        } else if (send(G.remoteFD, recvbuf, sz+1, MSG_DONTWAIT | MSG_NOSIGNAL) == -1)
++                            handle_send(errno);
+  no_luck: ;
+ 		}
+ #endif
+ 		if (!ENABLE_FEATURE_REMOTE_LOG || (option_mask32 & OPT_locallog)) {
+ 			recvbuf[sz] = '\0'; /* ensure it *is* NUL terminated */
+ 			split_escape_and_log(recvbuf, sz);
+ 		}
+@@ -660,14 +694,16 @@ int syslogd_main(int argc ATTRIBUTE_UNUS
+ 		G.logLevel = xatou_range(opt_l, 1, 8);
+ 	//if (option_mask32 & OPT_small) // -S
+ #if ENABLE_FEATURE_ROTATE_LOGFILE
+ 	if (option_mask32 & OPT_filesize) // -s
+ 		G.logFileSize = xatou_range(opt_s, 0, INT_MAX/1024) * 1024;
+ 	if (option_mask32 & OPT_rotatecnt) // -b
+ 		G.logFileRotate = xatou_range(opt_b, 0, 99);
++	if (option_mask32 & OPT_tcp) // -t
++		G.tcp = 1;
+ #endif
+ #if ENABLE_FEATURE_IPC_SYSLOG
+ 	if (opt_C) // -Cn
+ 		G.shm_size = xatoul_range(opt_C, 4, INT_MAX/1024) * 1024;
+ #endif
+ 
+ 	/* If they have not specified remote logging, then log locally */

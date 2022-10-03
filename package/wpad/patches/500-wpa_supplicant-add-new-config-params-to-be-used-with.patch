@@ -1,0 +1,251 @@
+From 4bb69d15477e0f2b00e166845341dc933de47c58 Mon Sep 17 00:00:00 2001
+From: Antonio Quartulli <ordex@autistici.org>
+Date: Sun, 3 Jun 2012 18:22:56 +0200
+Subject: [PATCHv2 601/602] wpa_supplicant: add new config params to be used
+ with the ibss join command
+
+Signed-hostap: Antonio Quartulli <ordex@autistici.org>
+---
+ src/drivers/driver.h            |    6 +++
+ wpa_supplicant/config.c         |   96 +++++++++++++++++++++++++++++++++++++++
+ wpa_supplicant/config_ssid.h    |    6 +++
+ wpa_supplicant/wpa_supplicant.c |   23 +++++++---
+ 4 files changed, 124 insertions(+), 7 deletions(-)
+
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -15,14 +15,15 @@
+  */
+ 
+ #ifndef DRIVER_H
+ #define DRIVER_H
+ 
+ #define WPA_SUPPLICANT_DRIVER_VERSION 4
+ 
++#include "drivers/nl80211_copy.h"
+ #include "common/defs.h"
+ #include "utils/list.h"
+ 
+ #define HOSTAPD_CHAN_DISABLED 0x00000001
+ #define HOSTAPD_CHAN_PASSIVE_SCAN 0x00000002
+ #define HOSTAPD_CHAN_NO_IBSS 0x00000004
+ #define HOSTAPD_CHAN_RADAR 0x00000008
+@@ -409,14 +410,19 @@ struct wpa_driver_associate_params {
+ 	const u8 *ssid;
+ 
+ 	/**
+ 	 * ssid_len - Length of the SSID (1..32)
+ 	 */
+ 	size_t ssid_len;
+ 
++	int beacon_interval;
++	int fixed_freq;
++	unsigned char rates[NL80211_MAX_SUPP_RATES];
++	int mcast_rate;
++
+ 	/**
+ 	 * freq - Frequency of the channel the selected AP is using
+ 	 * Frequency that the selected AP is using (in MHz as
+ 	 * reported in the scan results)
+ 	 */
+ 	int freq;
+ 
+--- a/wpa_supplicant/config.c
++++ b/wpa_supplicant/config.c
+@@ -11,14 +11,15 @@
+ #include "common.h"
+ #include "utils/uuid.h"
+ #include "utils/ip_addr.h"
+ #include "crypto/sha1.h"
+ #include "rsn_supp/wpa.h"
+ #include "eap_peer/eap.h"
+ #include "p2p/p2p.h"
++#include "drivers/nl80211_copy.h"
+ #include "config.h"
+ 
+ 
+ #if !defined(CONFIG_CTRL_IFACE) && defined(CONFIG_NO_CONFIG_WRITE)
+ #define NO_CONFIG_WRITE
+ #endif
+ 
+@@ -1509,14 +1510,105 @@ static char * wpa_config_write_psk_list(
+ {
+ 	return NULL;
+ }
+ #endif /* NO_CONFIG_WRITE */
+ 
+ #endif /* CONFIG_P2P */
+ 
++static int wpa_config_parse_mcast_rate(const struct parse_data *data,
++				       struct wpa_ssid *ssid, int line,
++				       const char *value)
++{
++	ssid->mcast_rate = (int)(strtod(value, NULL) * 10);
++
++	return 0;
++}
++
++#ifndef NO_CONFIG_WRITE
++static char * wpa_config_write_mcast_rate(const struct parse_data *data,
++					  struct wpa_ssid *ssid)
++{
++	char *value;
++	int res;
++
++	if (!ssid->mcast_rate == 0)
++		return NULL;
++
++	value = os_malloc(6); /* longest: 300.0 */
++	if (value == NULL)
++		return NULL;
++	res = os_snprintf(value, 5, "%.1f", (double)ssid->mcast_rate / 10);
++	if (res < 0) {
++		os_free(value);
++		return NULL;
++	}
++	return value;
++}
++#endif /* NO_CONFIG_WRITE */
++
++static int wpa_config_parse_rates(const struct parse_data *data,
++				  struct wpa_ssid *ssid, int line,
++				  const char *value)
++{
++	int i;
++	char *pos, *r, *sptr, *end;
++	double rate;
++
++	pos = (char *)value;
++	r = strtok_r(pos, ",", &sptr);
++	i = 0;
++	while (pos && i < NL80211_MAX_SUPP_RATES) {
++		rate = 0.0;
++		if (r)
++			rate = strtod(r, &end);
++		ssid->rates[i] = rate * 2;
++		if (*end != '\0' || rate * 2 != ssid->rates[i])
++			return 1;
++
++		i++;
++		r = strtok_r(NULL, ",", &sptr);
++	}
++
++	return 0;
++}
++
++#ifndef NO_CONFIG_WRITE
++static char * wpa_config_write_rates(const struct parse_data *data,
++				     struct wpa_ssid *ssid)
++{
++	char *value, *pos;
++	int res, i;
++
++	if (ssid->rates[0] <= 0)
++		return NULL;
++
++	value = os_malloc(6 * NL80211_MAX_SUPP_RATES + 1);
++	if (value == NULL)
++		return NULL;
++	pos = value;
++	for (i = 0; i < NL80211_MAX_SUPP_RATES - 1; i++) {
++		res = os_snprintf(pos, 6, "%.1f,", (double)ssid->rates[i] / 2);
++		if (res < 0) {
++			os_free(value);
++			return NULL;
++		}
++		pos += res;
++	}
++	res = os_snprintf(pos, 6, "%.1f",
++			  (double)ssid->rates[NL80211_MAX_SUPP_RATES - 1] / 2);
++	if (res < 0) {
++		os_free(value);
++		return NULL;
++	}
++
++	value[6 * NL80211_MAX_SUPP_RATES] = '\0';
++	return value;
++}
++#endif /* NO_CONFIG_WRITE */
++
+ /* Helper macros for network block parser */
+ 
+ #ifdef OFFSET
+ #undef OFFSET
+ #endif /* OFFSET */
+ /* OFFSET: Get offset of a variable within the wpa_ssid structure */
+ #define OFFSET(v) ((void *) &((struct wpa_ssid *) 0)->v)
+@@ -1712,14 +1804,17 @@ static const struct parse_data ssid_fiel
+ 	{ INT_RANGE(vht_tx_mcs_nss_6, -1, 3) },
+ 	{ INT_RANGE(vht_tx_mcs_nss_7, -1, 3) },
+ 	{ INT_RANGE(vht_tx_mcs_nss_8, -1, 3) },
+ #endif /* CONFIG_VHT_OVERRIDES */
+ 	{ INT(ap_max_inactivity) },
+ 	{ INT(dtim_period) },
+ 	{ INT(beacon_int) },
++	{ INT_RANGE(fixed_freq, 0, 1) },
++	{ FUNC(rates) },
++	{ FUNC(mcast_rate) },
+ };
+ 
+ #undef OFFSET
+ #undef _STR
+ #undef STR
+ #undef STR_KEY
+ #undef _STR_LEN
+--- a/wpa_supplicant/config_ssid.h
++++ b/wpa_supplicant/config_ssid.h
+@@ -8,14 +8,15 @@
+ 
+ #ifndef CONFIG_SSID_H
+ #define CONFIG_SSID_H
+ 
+ #include "common/defs.h"
+ #include "utils/list.h"
+ #include "eap_peer/eap_config.h"
++#include "drivers/nl80211_copy.h"
+ 
+ #define MAX_SSID_LEN 32
+ 
+ 
+ #define DEFAULT_EAP_WORKAROUND ((unsigned int) -1)
+ #define DEFAULT_EAPOL_FLAGS (EAPOL_FLAG_REQUIRE_KEY_UNICAST | \
+ 			     EAPOL_FLAG_REQUIRE_KEY_BROADCAST)
+@@ -617,10 +618,14 @@ struct wpa_ssid {
+ 	 * parent_cred - Pointer to parent wpa_cred entry
+ 	 *
+ 	 * This pointer can be used to delete temporary networks when a wpa_cred
+ 	 * that was used to create them is removed. This pointer should not be
+ 	 * dereferences since it may not be updated in all cases.
+ 	 */
+ 	void *parent_cred;
++
++	int fixed_freq;
++	unsigned char rates[NL80211_MAX_SUPP_RATES];
++	double mcast_rate;
+ };
+ 
+ #endif /* CONFIG_SSID_H */
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -1756,14 +1756,21 @@ static void wpas_start_assoc_cb(struct w
+ 		params.bssid = ssid->bssid;
+ 		params.fixed_bssid = 1;
+ 	}
+ 
+ 	if (ssid->mode == WPAS_MODE_IBSS && ssid->frequency > 0 &&
+ 	    params.freq == 0)
+ 		params.freq = ssid->frequency; /* Initial channel for IBSS */
++	params.fixed_freq = ssid->fixed_freq;
++	i = 0;
++	while (i < NL80211_MAX_SUPP_RATES) {
++		params.rates[i] = ssid->rates[i];
++		i++;
++	}
++	params.mcast_rate = ssid->mcast_rate;
+ 	params.wpa_ie = wpa_ie;
+ 	params.wpa_ie_len = wpa_ie_len;
+ 	params.pairwise_suite = cipher_pairwise;
+ 	params.group_suite = cipher_group;
+ 	params.key_mgmt_suite = wpa_s->key_mgmt;
+ 	params.wpa_proto = wpa_s->wpa_proto;
+ 	params.auth_alg = algs;

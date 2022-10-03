@@ -1,0 +1,36 @@
+--- a/wpa_supplicant/wnm_sta.c
++++ b/wpa_supplicant/wnm_sta.c
+@@ -250,15 +250,15 @@ static void ieee802_11_rx_wnmsleep_resp(
+ 	struct wnm_sleep_element *wnmsleep_ie = NULL;
+ 	/* multiple TFS Resp IE (assuming consecutive) */
+ 	u8 *tfsresp_ie_start = NULL;
+ 	u8 *tfsresp_ie_end = NULL;
+ 
+ 	if (!wpa_s->wnmsleep_used) {
+ 		wpa_printf(MSG_DEBUG,
+-			   "WNM: Ignore WNM-Sleep Mode Response frame since WNM-Sleep Mode has not been used in this association");
++			   "WNM: Ignore WNM-Sleep Mode Response frame since WNM-Sleep Mode operation has not been requested");
+ 		return;
+ 	}
+ 
+  	if (len < 3)
+  		return;
+         key_len_total = le_to_host16(*((u16 *)(frm+2)));
+ 
+@@ -288,14 +288,16 @@ static void ieee802_11_rx_wnmsleep_resp(
+ 	}
+ 
+ 	if (!wnmsleep_ie) {
+ 		wpa_printf(MSG_DEBUG, "No WNM-Sleep IE found");
+ 		return;
+ 	}
+ 
++	wpa_s->wnmsleep_used = 0;
++
+ 	if (wnmsleep_ie->status == WNM_STATUS_SLEEP_ACCEPT ||
+ 	    wnmsleep_ie->status == WNM_STATUS_SLEEP_EXIT_ACCEPT_GTK_UPDATE) {
+ 		wpa_printf(MSG_DEBUG, "Successfully recv WNM-Sleep Response "
+ 			   "frame (action=%d, intval=%d)",
+ 			   wnmsleep_ie->action_type, wnmsleep_ie->intval);
+ 		if (wnmsleep_ie->action_type == WNM_SLEEP_MODE_ENTER) {
+ 			wnm_sleep_mode_enter_success(wpa_s, tfsresp_ie_start,

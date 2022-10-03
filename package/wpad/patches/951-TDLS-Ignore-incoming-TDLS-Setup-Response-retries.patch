@@ -1,0 +1,25 @@
+--- a/src/rsn_supp/tdls.c
++++ b/src/rsn_supp/tdls.c
+@@ -1966,14 +1966,22 @@ static int wpa_tdls_process_tpk_m2(struc
+ 		 * same time and we accept the TPK M1 from the peer in
+ 		 * wpa_tdls_process_tpk_m1() and clear our previous state.
+ 		 */
+ 		wpa_printf(MSG_INFO, "TDLS: We were not the initiator, so "
+ 			   "ignore TPK M2 from " MACSTR, MAC2STR(src_addr));
+ 		return -1;
+ 	}
++
++	if (peer->tpk_success) {
++		wpa_printf(MSG_INFO, "TDLS: Ignore incoming TPK M2 retry, from "
++			   MACSTR " as TPK M3 was already sent",
++			   MAC2STR(src_addr));
++		return 0;
++	}
++
+ 	wpa_tdls_tpk_retry_timeout_cancel(sm, peer, WLAN_TDLS_SETUP_REQUEST);
+ 
+ 	if (len < 3 + 2 + 1) {
+ 		wpa_tdls_disable_peer_link(sm, peer);
+ 		return -1;
+ 	}
+ 

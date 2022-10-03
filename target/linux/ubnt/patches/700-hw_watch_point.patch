@@ -1,0 +1,65 @@
+Index: linux-2.6.32.68/arch/mips/kernel/cpu-probe.c
+===================================================================
+--- linux-2.6.32.68.orig/arch/mips/kernel/cpu-probe.c
++++ linux-2.6.32.68/arch/mips/kernel/cpu-probe.c
+@@ -969,10 +969,37 @@ __cpuinit void cpu_probe(void)
+ 		c->srsets = 1;
+ }
+ 
++void set_watch_reg(void)
++{
++	unsigned long reg_lo = 0, reg_hi = 0x7;
++	unsigned long hw_addr_min_mask = 0x7;
++	unsigned long hw_addr_max_mask = 0xfff;
++
++	unsigned long address = 0x801b8064;
++	unsigned long mask = 0xff;
++
++	unsigned long reg_mask;
++	unsigned long reg_addr;
++
++	mask |= hw_addr_min_mask; /* double word address */
++	mask &= hw_addr_max_mask; /* max mask len */
++
++	reg_addr = address & ~mask;
++	reg_mask = mask & ~hw_addr_min_mask;
++
++	reg_lo = reg_addr | 0x1; /* 0x1 (W) - store(write) watch */
++	reg_hi = 0x40000000 | reg_mask | 0x7; /* 0x40000000 - Global match, 0x7 - clear just in case */
++
++	write_c0_watchlo2(reg_lo);
++	write_c0_watchhi2(reg_hi);
++}
++
+ __cpuinit void cpu_report(void)
+ {
+ 	struct cpuinfo_mips *c = &current_cpu_data;
+ 
++	set_watch_reg();
++
+ 	printk(KERN_INFO "CPU revision is: %08x (%s)\n",
+ 	       c->processor_id, cpu_name_string());
+ 	if (c->options & MIPS_CPU_FPU)
+Index: linux-2.6.32.68/arch/mips/kernel/traps.c
+===================================================================
+--- linux-2.6.32.68.orig/arch/mips/kernel/traps.c
++++ linux-2.6.32.68/arch/mips/kernel/traps.c
+@@ -948,6 +948,10 @@ asmlinkage void do_mdmx(struct pt_regs *
+  */
+ asmlinkage void do_watch(struct pt_regs *regs)
+ {
++	local_irq_disable();
++	add_preempt_count(HARDIRQ_OFFSET); /* pretend we are in interrupt */
++	die("Watch exception", regs);
++#if 0
+ 	u32 cause;
+ 
+ 	/*
+@@ -971,6 +975,7 @@ asmlinkage void do_watch(struct pt_regs
+ 		mips_clear_watch_registers();
+ 		local_irq_enable();
+ 	}
++#endif
+ }
+ 
+ asmlinkage void do_mcheck(struct pt_regs *regs)

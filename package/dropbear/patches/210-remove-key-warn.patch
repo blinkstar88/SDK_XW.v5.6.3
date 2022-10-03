@@ -1,0 +1,20 @@
+--- a/svr-runopts.c
++++ b/svr-runopts.c
+@@ -401,15 +401,13 @@
+ }
+ 
+ /* Must be called after syslog/etc is working */
+ static void loadhostkey(const char *keyfile, int fatal_duplicate) {
+ 	sign_key * read_key = new_sign_key();
+ 	enum signkey_type type = DROPBEAR_SIGNKEY_ANY;
+-	if (readhostkey(keyfile, read_key, &type) == DROPBEAR_FAILURE) {
+-		dropbear_log(LOG_WARNING, "Failed loading %s", keyfile);
+-	}
++	readhostkey(keyfile, read_key, &type);
+ 
+ #ifdef DROPBEAR_RSA
+ 	if (type == DROPBEAR_SIGNKEY_RSA) {
+ 		loadhostkey_helper("RSA", (void**)&read_key->rsakey, (void**)&svr_opts.hostkey->rsakey, fatal_duplicate);
+ 	}
+ #endif
+

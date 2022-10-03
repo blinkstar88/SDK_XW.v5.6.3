@@ -1,0 +1,22 @@
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -1965,17 +1965,19 @@ gso:
+ 				rc = NET_XMIT_SUCCESS;
+ 				if (!dev_hard_start_xmit(skb, dev, txq)) {
+ 					HARD_TX_UNLOCK(dev, txq);
+ 					goto out;
+ 				}
+ 			}
+ 			HARD_TX_UNLOCK(dev, txq);
++#if 0 /* UBNT: disabled code */
+ 			if (net_ratelimit())
+ 				printk(KERN_CRIT "Virtual device %s asks to "
+ 				       "queue packet!\n", dev->name);
++#endif
+ 		} else {
+ 			/* Recursion is detected! It is possible,
+ 			 * unfortunately */
+ 			if (net_ratelimit())
+ 				printk(KERN_CRIT "Dead loop on virtual device "
+ 				       "%s, fix it urgently!\n", dev->name);
+ 		}

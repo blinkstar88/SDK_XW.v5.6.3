@@ -1,0 +1,22 @@
+--- a/src/ap/ieee802_1x.c
++++ b/src/ap/ieee802_1x.c
+@@ -1930,17 +1930,17 @@ void ieee802_1x_notify_pre_auth(struct e
+ 	if (pre_auth)
+ 		sm->flags |= EAPOL_SM_PREAUTH;
+ 	else
+ 		sm->flags &= ~EAPOL_SM_PREAUTH;
+ }
+ 
+ 
+-static const char * bool_txt(Boolean bool)
++static const char * bool_txt(Boolean bool_val)
+ {
+-	return bool ? "TRUE" : "FALSE";
++	return bool_val ? "TRUE" : "FALSE";
+ }
+ 
+ 
+ int ieee802_1x_get_mib(struct hostapd_data *hapd, char *buf, size_t buflen)
+ {
+ 	/* TODO */
+ 	return 0;

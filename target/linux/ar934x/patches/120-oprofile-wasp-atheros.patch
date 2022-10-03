@@ -1,0 +1,124 @@
+--- a/arch/Kconfig
++++ b/arch/Kconfig
+@@ -11,14 +11,28 @@ config OPROFILE
+ 	help
+ 	  OProfile is a profiling system capable of profiling the
+ 	  whole system, include the kernel, kernel modules, libraries,
+ 	  and applications.
+ 
+ 	  If unsure, say N.
+ 
++config OPROFILE_WASP
++	bool "OProfile support for Atheros WASP chip"
++	default n
++	depends on WASP_SUPPORT
++	select HAVE_PROFILE
++	select PROFILING
++	select TRACING
++	select TRACING_SUPPORT
++	select RING_BUFFER
++	select OPROFILE
++	help
++	  Add the support for profiling linux kernel running on the
++	  atheros wasp chip
++
+ config OPROFILE_IBS
+ 	bool "OProfile AMD IBS support (EXPERIMENTAL)"
+ 	default n
+ 	depends on OPROFILE && SMP && X86
+ 	help
+           Instruction-Based Sampling (IBS) is a new profiling
+           technique that provides rich, precise program performance
+--- a/arch/mips/kernel/cevt-r4k.c
++++ b/arch/mips/kernel/cevt-r4k.c
+@@ -70,14 +70,22 @@ irqreturn_t c0_compare_interrupt(int irq
+ 	 */
+ 	if (!r2 || (read_c0_cause() & (1 << 30))) {
+ 		/* Clear Count/Compare Interrupt */
+ 		write_c0_compare(read_c0_compare());
+ 		cd = &per_cpu(mips_clockevent_device, cpu);
+ 		cd->event_handler(cd);
+ 	}
++#ifdef CONFIG_OPROFILE_WASP
++        //pkamath: oprofile-0.9.2 does not support interrupt based profiling.
++        //Therefore we will check for a profiling event every timer interrupt.
++        // Note that this may impact accuracy of the profile
++        if (!r2 || (read_c0_cause() & (1 << 26)))
++                perf_irq();
++        //End of code changes
++#endif
+ 
+ out:
+ 	return IRQ_HANDLED;
+ }
+ 
+ #endif /* Not CONFIG_MIPS_MT_SMTC */
+ 
+--- a/arch/mips/oprofile/common.c
++++ b/arch/mips/oprofile/common.c
+@@ -11,15 +11,17 @@
+ #include <linux/oprofile.h>
+ #include <linux/smp.h>
+ #include <asm/cpu-info.h>
+ 
+ #include "op_impl.h"
+ 
+ extern struct op_mips_model op_model_mipsxx_ops __attribute__((weak));
++#ifndef CONFIG_OPROFILE_WASP
+ extern struct op_mips_model op_model_rm9000_ops __attribute__((weak));
++#endif
+ extern struct op_mips_model op_model_loongson2_ops __attribute__((weak));
+ 
+ static struct op_mips_model *model;
+ 
+ static struct op_counter_config ctr[20];
+ 
+ static int op_mips_setup(void)
+@@ -86,18 +88,19 @@ int __init oprofile_arch_init(struct opr
+ 	case CPU_SB1:
+ 	case CPU_SB1A:
+ 	case CPU_R10000:
+ 	case CPU_R12000:
+ 	case CPU_R14000:
+ 		lmodel = &op_model_mipsxx_ops;
+ 		break;
+-
++#ifndef CONFIG_OPROFILE_WASP
+ 	case CPU_RM9000:
+ 		lmodel = &op_model_rm9000_ops;
+ 		break;
++#endif
+ 	case CPU_LOONGSON2:
+ 		lmodel = &op_model_loongson2_ops;
+ 		break;
+ 	};
+ 
+ 	if (!lmodel)
+ 		return -ENODEV;
+--- a/arch/mips/oprofile/op_model_mipsxx.c
++++ b/arch/mips/oprofile/op_model_mipsxx.c
+@@ -342,15 +342,24 @@ static int __init mipsxx_init(void)
+ #endif
+ 
+ 	case CPU_34K:
+ 		op_model_mipsxx_ops.cpu_type = "mips/34K";
+ 		break;
+ 
+ 	case CPU_74K:
++#ifdef CONFIG_OPROFILE_WASP
++                /*
++                 * for now wasp 74k is exposed as 24k, so
++                 * that the old oprofile tool works without
++                 * whining about the processor
++                 */
++		op_model_mipsxx_ops.cpu_type = "mips/24K";
++#else
+ 		op_model_mipsxx_ops.cpu_type = "mips/74K";
++#endif
+ 		break;
+ 
+ 	case CPU_5KC:
+ 		op_model_mipsxx_ops.cpu_type = "mips/5K";
+ 		break;
+ 
+ 	case CPU_R10000:

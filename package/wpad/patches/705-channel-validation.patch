@@ -1,0 +1,32 @@
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -102,27 +102,17 @@ int hostapd_get_hw_features(struct hosta
+ 		 * domain */
+ 		for (j = 0; j < feature->num_channels; j++) {
+ 			int dfs = 0;
+ 
+ 			/*
+ 			 * Disable all channels that are marked not to allow
+ 			 * IBSS operation or active scanning.
+-			 * Use radar channels only if the driver supports DFS.
+ 			 */
+-			if ((feature->channels[j].flag &
+-			     HOSTAPD_CHAN_RADAR) && dfs_enabled) {
+-				dfs = 1;
+-			} else if (feature->channels[j].flag &
+-				   (HOSTAPD_CHAN_NO_IBSS |
+-				    HOSTAPD_CHAN_PASSIVE_SCAN |
+-				    HOSTAPD_CHAN_RADAR)) {
+-				feature->channels[j].flag |=
+-					HOSTAPD_CHAN_DISABLED;
+-			}
+-
++			if (feature->channels[j].flag & HOSTAPD_CHAN_NO_IBSS)
++				feature->channels[j].flag |= HOSTAPD_CHAN_DISABLED;
+ 			if (feature->channels[j].flag & HOSTAPD_CHAN_DISABLED)
+ 				continue;
+ 
+ 			wpa_printf(MSG_MSGDUMP, "Allowed channel: mode=%d "
+ 				   "chan=%d freq=%d MHz max_tx_power=%d dBm%s",
+ 				   feature->mode,
+ 				   feature->channels[j].chan,
