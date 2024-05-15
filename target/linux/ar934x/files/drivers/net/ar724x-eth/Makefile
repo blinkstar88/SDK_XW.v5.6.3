@@ -2,7 +2,6 @@
 # Makefile for Ar7240 gigabit MAC and Phys
 #
 
-# Code for ENETDIR enviroment variable, Sean@liteon.com, 2013-03-29----->
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
@@ -14,19 +13,18 @@ endif
 
 export ETH_CONFIG=_s17
 export ATH_GMAC_AR934x=1
-export ENETDIR:=$(LINUX_DIR)/drivers/net/ar934x
+export ENETDIR:=$(LINUX_DIR)/drivers/net/ar724x-eth
 
-#<-----Sean@liteon.com, 2013-03-29
 
 include ${ENETDIR}/Makefile.inc 
 ifeq ($(ATH_GMAC_AR934x),1)
 
-obj-m					:= athrs_gmac.o 
-athrs_gmac-objs				:=  $(ACCEL-OBJS) $(PHY-OBJS) $(MAC-OBJS) athrs_mac.o athrs_mac_timer.o athrs_flowmac.o
+obj-m					:= ar724x-eth.o 
+ar724x-eth-objs				:=  $(ACCEL-OBJS) $(PHY-OBJS) $(MAC-OBJS) athrs_mac.o athrs_mac_timer.o athrs_flowmac.o
 
 else
 
-obj-$(CONFIG_AG7240)			+= athrs_gmac.o
+obj-$(CONFIG_AG7240)			+= ar724x-eth.o
 obj-phy-$(CONFIG_MACH_AR7240)		+= ag7240.o
 obj-phy-$(CONFIG_AR7240_S26_PHY)	+= phys/ar7240_s26_phy.o
 obj-phy-$(CONFIG_ATHRF1_PHY)            += phys/athrf1_phy.o
@@ -52,7 +50,7 @@ EXTRA_CFLAGS = -DATH_GMAC_TXQUEUELEN=1000
 endif
 
 
-athrs_gmac-objs				:= $(obj-phy-y) athrs_mac.o athrs_mac_timer.o  athrs_phy_ctrl.o athrs_gmac_ctrl.o athrs_flowmac.o $(obj-hw-nat-y) $(obj-hw-acl-y)
+ar724x-eth-objs				:= $(obj-phy-y) athrs_mac.o athrs_mac_timer.o  athrs_phy_ctrl.o athrs_gmac_ctrl.o athrs_flowmac.o $(obj-hw-nat-y) $(obj-hw-acl-y)
 
 endif
 
