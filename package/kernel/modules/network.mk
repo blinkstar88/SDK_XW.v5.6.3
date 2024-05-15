@@ -869,3 +869,17 @@ define KernelPackage/mdio_bitbang/description
 endef
 $(eval $(call KernelPackage,mdio_bitbang))
 
+define KernelPackage/ar724x-eth
+  TITLE:=AR7240 ethernet driver (Ubiquiti)
+  FILES:=$(LINUX_DIR)/drivers/net/ar724x-eth/ar724x-eth.$(LINUX_KMOD_SUFFIX)
+  KCONFIG:=CONFIG_AG7240 
+  DEPENDS:=@LINUX_2_6
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  AUTOLOAD:=$(call AutoLoad,10,ar724x-eth)
+endef
+ 
+define KernelPackage/ar724x-eth/description
+ Kernel module for ethernet driver on AR7240 (Ubiquiti)
+endef
+$(eval $(call KernelPackage,ar724x-eth))
+
