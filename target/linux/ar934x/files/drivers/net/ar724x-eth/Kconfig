@@ -1,0 +1,12 @@
+# Add for configure ethernet. Sean@liteon.com, 2013-02-27----->
+menuconfig ETHERNET
+        bool "Ethernet Support"
+        help
+          Say Y to enable AR934X Ethernet support. 
+
+config ATHRS_GMAC
+	tristate "Atheros gigabit MAC"
+	depends on ETHERNET
+	help
+	  Say Y or M to enable AR934X gigabit MAC and phys.
+# <-----Sean@liteon.com, 2013-02-27

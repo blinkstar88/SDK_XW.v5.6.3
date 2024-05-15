@@ -2,6 +2,7 @@
 # Makefile for Ar7240 gigabit MAC and Phys
 #
 
+# Code for ENETDIR enviroment variable, Sean@liteon.com, 2013-03-29----->
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
@@ -13,7 +14,9 @@ endif
 
 export ETH_CONFIG=_s17
 export ATH_GMAC_AR934x=1
-export ENETDIR:=$(LINUX_DIR)/drivers/net/ar724x-eth
+export ENETDIR:=$(LINUX_DIR)/drivers/net/ar934x
+
+#<-----Sean@liteon.com, 2013-03-29
 
 include ${ENETDIR}/Makefile.inc 
 ifeq ($(ATH_GMAC_AR934x),1)
@@ -39,9 +42,7 @@ obj-hw-acl-$(CONFIG_ATHRS_HW_ACL)	+= athrs_nf_acl.o athrs_hw_acl.o
 obj-phy-$(CONFIG_MACH_AR934x) 	        += ag934x.o
 obj-phy-$(CONFIG_MACH_HORNET)   	+= ag7240.o
 obj-phy-$(CONFIG_AR8021_PHY)        	+= phys/ar8021_phy.o 
-obj-phy-$(CONFIG_ATHR8032_PHY)		+= phys/athr8032_phy.o 
 obj-phy-$(CONFIG_ATHRS_VIR_PHY)        	+= phys/athrs_vir_phy.o 
-
 
 ifdef ATH_GMAC_TXQUEUELEN
 EXTRA_CFLAGS = -DATH_GMAC_TXQUEUELEN=$$ATH_GMAC_TXQUEUELEN
@@ -70,6 +71,5 @@ EXTRA_CFLAGS+= -DNO_PUSH_BUTTON=1
 else
 EXTRA_CFLAGS+= -DNO_PUSH_BUTTON=0
 endif
-
 
 
