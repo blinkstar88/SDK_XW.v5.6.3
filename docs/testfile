@@ -21,7 +21,7 @@
 / {
 	#address-cells = <0x2>;
 	#size-cells = <0x2>;
-	model = "Qualcomm Technologies, Inc. IPQ5018/AP-MP03.5-C1";
+	model = "Liteon WPX8324";
 	compatible = "qcom,ipq5018-ap-mp03.5-c1", "qcom,ipq5018-mp03.5", "qcom,ipq5018";
 	interrupt-parent = <&intc>;
 
